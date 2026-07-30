@@ -1,0 +1,16 @@
+app:
+  name: lumina
+  version: 0.1.0
+  timezone: Asia/Shanghai
+
+runtime:
+  interval: 5
+  log_level: INFO
+
+storage:
+  type: sqlite
+  path: data/lumina.db
+
+notify:
+  wechat:
+    enabled: false

@@ -20,7 +20,7 @@ Lumina 是长期运行在 Ubuntu 22.04 LTS 云服务器上的 A 股智能监控�
 
 - 产品名称和面向用户的正式名称使用 `Lumina`。
 - 代码包、模块命名空间、目录、配置文件、数据库文件、日志文件、进程标识和 systemd 服务等技术标识统一使用小写 `lumina`。
-- 示例：Python 包使用 `lumina`，systemd 单元使用 `lumina.service`，主配置文件使用 `lumina.yaml`。
+- 示例：Python 包使用 `lumina`，systemd 单元使用 `lumina.service`，主配置文件使用 `settings.yaml`，监控标的配置使用 `stocks.yaml`。
 - 不得为本项目引入其他项目简称、大小写变体或无关的服务名称。
 
 ## 二、技术约定

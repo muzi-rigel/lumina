@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 
-from app.market.source import MarketQuote
+from app.market.model import MarketQuote
 from app.monitor.rules import MonitorRule, RuleResult
 
 logger = logging.getLogger(__name__)

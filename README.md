@@ -20,11 +20,14 @@ python3.11 -m venv .venv
 启动服务：
 
 ```bash
-.venv/bin/lumina --config config/lumina.yaml
+.venv/bin/lumina --settings config/settings.yaml --stocks config/stocks.yaml
 ```
 
 按 `Ctrl+C` 后，服务会完成当前任务并安全停止。SQLite 数据默认写入
 `data/lumina.db`，该目录中的运行数据不会提交到 Git。
+
+启动时会检查两个配置文件、日志目录、数据目录和配置时区下的系统时间。
+日志同时输出到控制台和 `logs/lumina.log`。
 
 ## 质量检查
 
@@ -37,13 +40,14 @@ python3.11 -m venv .venv
 ## Ubuntu 部署
 
 建议代码安装到 `/opt/lumina`，配置保存到
-`/etc/lumina/lumina.yaml`。生产模板已将数据库设置为
+`/etc/lumina/settings.yaml` 和 `/etc/lumina/stocks.yaml`。生产模板已将数据库设置为
 `/var/lib/lumina/lumina.db`。
 
 ```bash
 sudo useradd --system --home /opt/lumina --shell /usr/sbin/nologin lumina
 sudo install -d -o lumina -g lumina /opt/lumina /etc/lumina
-sudo cp config/lumina.production.yaml /etc/lumina/lumina.yaml
+sudo cp config/settings.production.yaml /etc/lumina/settings.yaml
+sudo cp config/stocks.yaml /etc/lumina/stocks.yaml
 sudo cp deploy/systemd/lumina.service /etc/systemd/system/lumina.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now lumina.service
@@ -62,10 +66,11 @@ Lumina 会结束调度循环并退出。
 ## 模块职责
 
 - `app/core`：配置、日志和周期调度。
-- `app/market`：行情源统一接口及供应方实现。
+- `app/market`：标准化行情模型、批量数据源协议、Mock 源及供应方实现。
 - `app/monitor`：监控引擎和规则接口。
 - `app/notify`：企业微信通知。
 - `app/storage`：SQLite 连接和事务边界。
 - `app/main.py`：依赖装配及服务生命周期。
 
-当前新浪、腾讯、监控规则和企业微信模块均为明确的扩展边界，不会发起外部请求。
+当前 Mock 行情源完全在本地生成可重复数据；新浪、腾讯和企业微信模块均为明确的扩展
+边界，不会发起外部请求。

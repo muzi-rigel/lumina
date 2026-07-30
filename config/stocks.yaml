@@ -1,0 +1,15 @@
+stocks:
+  - code: "510300"
+    name: 沪深300ETF
+    type: ETF
+    enabled: true
+
+  - code: "512480"
+    name: 半导体ETF
+    type: ETF
+    enabled: true
+
+  - code: "000001"
+    name: 上证指数
+    type: INDEX
+    enabled: true

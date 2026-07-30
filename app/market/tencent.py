@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from app.market.source import MarketQuote, MarketSource, MarketSourceError
+from app.market.model import MarketInstrument
+from app.market.source import MarketSource, MarketSourceError, QuoteBatch
 
 
 class TencentMarketSource(MarketSource):
@@ -14,6 +15,6 @@ class TencentMarketSource(MarketSource):
     def name(self) -> str:
         return "tencent"
 
-    def fetch_quotes(self, symbols: Sequence[str]) -> list[MarketQuote]:
-        del symbols
+    def fetch_quotes(self, instruments: Sequence[MarketInstrument]) -> QuoteBatch:
+        del instruments
         raise MarketSourceError("腾讯行情源尚未实现")

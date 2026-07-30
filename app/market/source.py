@@ -1,4 +1,4 @@
-"""行情数据源的公共领域接口。"""
+"""行情数据源协议及批量查询结果。"""
 
 from __future__ import annotations
 
@@ -6,26 +6,51 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
+
+from app.market.model import MarketInstrument, MarketQuote
 
 
 class MarketSourceError(RuntimeError):
-    """行情源访问或数据解析失败。"""
+    """整个行情源不可用或响应无法解析。"""
 
 
-@dataclass(frozen=True)
-class MarketQuote:
-    """数据源标准化后的最小行情快照。"""
+@dataclass(frozen=True, slots=True)
+class QuoteFailure:
+    """单个标的获取失败，不应中断同批其他标的。"""
 
-    symbol: str
-    name: str
-    price: Decimal
-    timestamp: datetime
+    instrument: MarketInstrument
+    message: str
+    retryable: bool
+
+    def __post_init__(self) -> None:
+        if not self.message.strip():
+            raise ValueError("失败原因不能为空")
+
+
+@dataclass(frozen=True, slots=True)
+class QuoteBatch:
+    """一次批量行情查询的标准化结果。"""
+
     source: str
+    requested_at: datetime
+    quotes: tuple[MarketQuote, ...] = ()
+    failures: tuple[QuoteFailure, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.source.strip():
+            raise ValueError("行情源名称不能为空")
+        if self.requested_at.tzinfo is None or self.requested_at.utcoffset() is None:
+            raise ValueError("请求时间必须包含时区")
+        if any(quote.source != self.source for quote in self.quotes):
+            raise ValueError("批次与行情快照的 source 必须一致")
+
+    @property
+    def is_complete(self) -> bool:
+        return not self.failures
 
 
 class MarketSource(ABC):
-    """所有行情供应方必须实现的统一接口。"""
+    """所有行情供应方必须实现的统一批量接口。"""
 
     @property
     @abstractmethod
@@ -33,5 +58,5 @@ class MarketSource(ABC):
         """返回稳定的数据源标识。"""
 
     @abstractmethod
-    def fetch_quotes(self, symbols: Sequence[str]) -> list[MarketQuote]:
-        """批量获取并标准化行情。"""
+    def fetch_quotes(self, instruments: Sequence[MarketInstrument]) -> QuoteBatch:
+        """批量获取行情；单标的异常通过 failures 返回。"""

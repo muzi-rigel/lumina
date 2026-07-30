@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from app.market.source import MarketQuote
+from app.market.model import InstrumentType, MarketInstrument, MarketQuote
 from app.monitor.engine import MonitorEngine
 from app.monitor.rules import MonitorRule, RuleResult
 
@@ -32,11 +32,20 @@ class TriggerRule(MonitorRule):
 
 def test_monitor_engine_isolates_rule_exception() -> None:
     quote = MarketQuote(
-        symbol="000001",
-        name="测试标的",
-        price=Decimal("10.00"),
+        instrument=MarketInstrument(
+            code="000001",
+            name="测试标的",
+            type=InstrumentType.INDEX,
+        ),
         timestamp=datetime.now(UTC),
         source="test",
+        price=Decimal("10.00"),
+        previous_close=Decimal("9.90"),
+        open_price=Decimal("9.95"),
+        high_price=Decimal("10.10"),
+        low_price=Decimal("9.80"),
+        volume=100_000,
+        turnover=Decimal("1000000.00"),
     )
     engine = MonitorEngine([BrokenRule(), TriggerRule()])
 
