@@ -1,0 +1,28 @@
+[Unit]
+Description=Lumina A-Share Monitoring Service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=lumina
+Group=lumina
+WorkingDirectory=/opt/lumina
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/lumina/.venv/bin/lumina --config /etc/lumina/lumina.yaml
+
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+
+StateDirectory=lumina
+LogsDirectory=lumina
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

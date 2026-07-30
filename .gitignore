@@ -39,9 +39,14 @@ Thumbs.db
 
 # 日志和进程运行文件
 *.log
-logs/
+logs/*
+!logs/.gitkeep
 *.pid
 *.pid.lock
+
+# 本地行情数据（仅保留目录）
+data/*
+!data/.gitkeep
 
 # SQLite 本地数据库及其临时文件
 *.db
