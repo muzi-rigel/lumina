@@ -16,6 +16,9 @@ from zoneinfo import ZoneInfo
 from app.core.config import AppConfig, ConfigError, load_config
 from app.core.logger import configure_logging
 from app.core.scheduler import IntervalScheduler
+from app.market.bootstrap import MarketBootstrapError, build_market_collector
+from app.market.collector import MarketCollector
+from app.market.factory import MarketSourceCreationError
 from app.storage.sqlite import SQLiteStorage
 
 logger = logging.getLogger(__name__)
@@ -62,9 +65,10 @@ def _run_startup_checks(
 class LuminaService:
     """装配基础设施并管理服务生命周期。"""
 
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(self, config: AppConfig, market_collector: MarketCollector) -> None:
         self._config = config
-        self._scheduler = IntervalScheduler(config.runtime.interval)
+        self._market_collector = market_collector
+        self._scheduler = IntervalScheduler(config.market.interval_seconds)
         self._storage = SQLiteStorage(
             config.storage.path,
             config.storage.busy_timeout_seconds,
@@ -83,21 +87,21 @@ class LuminaService:
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
 
-    @staticmethod
-    def _heartbeat() -> None:
-        logger.debug("Lumina 服务心跳正常")
+    def _collect_market_quotes(self) -> None:
+        self._market_collector.collect_once()
 
     def run(self) -> None:
         """初始化依赖并运行，直到收到系统停止信号。"""
 
         self._install_signal_handlers()
         self._storage.initialize()
-        self._scheduler.add_task("lumina-heartbeat", self._heartbeat)
+        self._scheduler.add_task("market-collection", self._collect_market_quotes)
 
         enabled_count = sum(stock.enabled for stock in self._config.stocks)
         logger.info(
-            "Lumina %s 服务启动，监控标的=%d database=%s",
+            "Lumina %s 服务启动，source=%s 监控标的=%d database=%s",
             self._config.app.version,
+            self._market_collector.source_name,
             enabled_count,
             self._config.storage.path,
         )
@@ -134,8 +138,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         _ensure_directory(log_dir, "日志目录")
         configure_logging(config.runtime.log_level, log_dir / "lumina.log")
         _run_startup_checks(config, args.settings, args.stocks, log_dir)
-        LuminaService(config).run()
-    except (ConfigError, StartupError) as exc:
+        market_collector = build_market_collector(config)
+        LuminaService(config, market_collector).run()
+    except (
+        ConfigError,
+        StartupError,
+        MarketBootstrapError,
+        MarketSourceCreationError,
+    ) as exc:
         print(f"Lumina 启动失败：{exc}", file=sys.stderr)
         return 2
     except Exception:

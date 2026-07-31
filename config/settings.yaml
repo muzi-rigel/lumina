@@ -4,8 +4,13 @@ app:
   timezone: Asia/Shanghai
 
 runtime:
-  interval: 5
   log_level: INFO
+
+market:
+  source: mock
+  interval_seconds: 5
+  mock:
+    seed: 42
 
 storage:
   type: sqlite

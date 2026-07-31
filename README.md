@@ -29,6 +29,20 @@ python3.11 -m venv .venv
 启动时会检查两个配置文件、日志目录、数据目录和配置时区下的系统时间。
 日志同时输出到控制台和 `logs/lumina.log`。
 
+行情采集配置位于 `settings.yaml`：
+
+```yaml
+market:
+  source: mock
+  interval_seconds: 5
+  mock:
+    seed: 42
+```
+
+当前只有 `mock` 可运行。配置为 `sina` 或 `tencent` 时，服务会在启动阶段明确
+报错，不会回退到 Mock。每个周期对所有启用标的执行一次批量查询，单标的失败或
+系统级行情源故障不会导致长期服务退出。
+
 ## 质量检查
 
 ```bash
@@ -67,6 +81,8 @@ Lumina 会结束调度循环并退出。
 
 - `app/core`：配置、日志和周期调度。
 - `app/market`：标准化行情模型、批量数据源协议、Mock 源及供应方实现。
+- `app/market/factory.py`：根据配置创建行情源，拒绝未知或尚未实现的数据源。
+- `app/market/collector.py`：批量采集、结构化日志和逐行情监控处理入口。
 - `app/monitor`：监控引擎和规则接口。
 - `app/notify`：企业微信通知。
 - `app/storage`：SQLite 连接和事务边界。

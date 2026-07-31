@@ -17,3 +17,18 @@ def test_scheduler_stops_and_isolates_task_exception() -> None:
     scheduler.run()
 
     assert completed == ["done"]
+
+
+def test_scheduler_stop_prevents_another_market_collection() -> None:
+    scheduler = IntervalScheduler(interval_seconds=0.01)
+    collection_count = 0
+
+    def collect_market_quotes() -> None:
+        nonlocal collection_count
+        collection_count += 1
+        scheduler.stop()
+
+    scheduler.add_task("market-collection", collect_market_quotes)
+    scheduler.run()
+
+    assert collection_count == 1

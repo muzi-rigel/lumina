@@ -27,8 +27,23 @@ class AppSettings:
 class RuntimeSettings:
     """服务运行参数。"""
 
-    interval: float
     log_level: str
+
+
+@dataclass(frozen=True)
+class MockSettings:
+    """Mock 行情源的简单可重复参数。"""
+
+    seed: int | None
+
+
+@dataclass(frozen=True)
+class MarketSettings:
+    """行情采集来源和周期配置。"""
+
+    source: str
+    interval_seconds: float
+    mock: MockSettings
 
 
 @dataclass(frozen=True)
@@ -70,6 +85,7 @@ class AppConfig:
 
     app: AppSettings
     runtime: RuntimeSettings
+    market: MarketSettings
     storage: StorageSettings
     notify: NotifySettings
     stocks: tuple[StockSettings, ...]
@@ -149,9 +165,28 @@ def _parse_runtime(root: Mapping[str, object]) -> RuntimeSettings:
     log_level = _required_string(values, "log_level", "runtime.log_level").upper()
     if log_level not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
         raise ConfigError("配置项 runtime.log_level 非法")
-    return RuntimeSettings(
-        interval=_positive_number(values, "interval", "runtime.interval"),
-        log_level=log_level,
+    return RuntimeSettings(log_level=log_level)
+
+
+def _parse_market(root: Mapping[str, object]) -> MarketSettings:
+    values = _required_mapping(root, "market")
+    source = _required_string(values, "source", "market.source").lower()
+    if source not in {"mock", "sina", "tencent"}:
+        raise ConfigError(f"不支持的行情源：{source}")
+
+    mock_values = _as_mapping(values.get("mock", {}), "market.mock")
+    seed = mock_values.get("seed")
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
+        raise ConfigError("配置项 market.mock.seed 必须是整数或 null")
+
+    return MarketSettings(
+        source=source,
+        interval_seconds=_positive_number(
+            values,
+            "interval_seconds",
+            "market.interval_seconds",
+        ),
+        mock=MockSettings(seed=seed),
     )
 
 
@@ -213,6 +248,8 @@ def _parse_stocks(root: Mapping[str, object]) -> tuple[StockSettings, ...]:
                 enabled=_required_bool(values, "enabled", f"stocks[{index}].enabled"),
             )
         )
+    if not any(stock.enabled for stock in stocks):
+        raise ConfigError("stocks.yaml 中没有 enabled: true 的监控标的")
     return tuple(stocks)
 
 
@@ -224,6 +261,7 @@ def load_config(settings_path: Path, stocks_path: Path) -> AppConfig:
     return AppConfig(
         app=_parse_app(settings_root),
         runtime=_parse_runtime(settings_root),
+        market=_parse_market(settings_root),
         storage=_parse_storage(settings_root),
         notify=_parse_notify(settings_root),
         stocks=_parse_stocks(stocks_root),

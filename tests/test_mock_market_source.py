@@ -55,3 +55,19 @@ def test_mock_source_rejects_naive_clock() -> None:
 
     with pytest.raises(MarketSourceError, match="必须返回带时区时间"):
         source.fetch_quotes(_instruments())
+
+
+def test_mock_source_seed_reproduces_quote_sequence() -> None:
+    first_source = MockMarketSource(seed=2026, clock=lambda: FIXED_TIME)
+    second_source = MockMarketSource(seed=2026, clock=lambda: FIXED_TIME)
+
+    first_sequence = [
+        first_source.fetch_quotes(_instruments()),
+        first_source.fetch_quotes(_instruments()),
+    ]
+    second_sequence = [
+        second_source.fetch_quotes(_instruments()),
+        second_source.fetch_quotes(_instruments()),
+    ]
+
+    assert first_sequence == second_sequence

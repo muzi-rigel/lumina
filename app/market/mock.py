@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
@@ -26,10 +27,12 @@ class MockMarketSource(MarketSource):
         initial_prices: Mapping[str, Decimal] | None = None,
         failure_codes: set[str] | None = None,
         clock: Callable[[], datetime] | None = None,
+        seed: int | None = None,
     ) -> None:
         self._initial_prices = dict(initial_prices or {})
         self._failure_codes = frozenset(failure_codes or ())
         self._clock = clock or self._shanghai_now
+        self._random = random.Random(0 if seed is None else seed)
         self._tick = 0
         self._lock = threading.Lock()
         self._validate_initial_prices()
@@ -63,14 +66,15 @@ class MockMarketSource(MarketSource):
         instrument: MarketInstrument,
         timestamp: datetime,
         tick: int,
+        basis_points: int,
     ) -> MarketQuote:
         previous_close = self._initial_prices.get(
             instrument.code,
             self._default_price(instrument),
         )
         step = PRICE_STEP[instrument.type]
-        basis_points = Decimal((int(instrument.code[-2:]) + tick) % 9 - 4)
-        price = (previous_close * (Decimal("1") + basis_points / Decimal("1000"))).quantize(
+        movement = Decimal(basis_points)
+        price = (previous_close * (Decimal("1") + movement / Decimal("1000"))).quantize(
             step,
             rounding=ROUND_HALF_UP,
         )
@@ -105,10 +109,11 @@ class MockMarketSource(MarketSource):
         with self._lock:
             self._tick += 1
             tick = self._tick
+            movements = tuple(self._random.randint(-4, 4) for _ in instruments)
 
         quotes: list[MarketQuote] = []
         failures: list[QuoteFailure] = []
-        for instrument in instruments:
+        for instrument, movement in zip(instruments, movements, strict=True):
             if instrument.code in self._failure_codes:
                 failures.append(
                     QuoteFailure(
@@ -118,7 +123,7 @@ class MockMarketSource(MarketSource):
                     )
                 )
                 continue
-            quotes.append(self._build_quote(instrument, timestamp, tick))
+            quotes.append(self._build_quote(instrument, timestamp, tick, movement))
 
         return QuoteBatch(
             source=self.name,
