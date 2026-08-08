@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import yaml
-
-
-class ConfigError(ValueError):
-    """配置文件缺失、格式错误或字段非法。"""
+from app.core.errors import ConfigError as ConfigError
+from app.core.rule_config import load_rule_definitions
+from app.core.yaml_loader import as_mapping as _as_mapping
+from app.core.yaml_loader import load_yaml as _load_yaml
+from app.monitor.model import RuleDefinition
 
 
 @dataclass(frozen=True)
@@ -81,7 +82,7 @@ class StockSettings:
 
 @dataclass(frozen=True)
 class AppConfig:
-    """合并 settings.yaml 与 stocks.yaml 后的完整配置。"""
+    """合并 settings.yaml、stocks.yaml 与 rules.yaml 后的完整配置。"""
 
     app: AppSettings
     runtime: RuntimeSettings
@@ -89,26 +90,7 @@ class AppConfig:
     storage: StorageSettings
     notify: NotifySettings
     stocks: tuple[StockSettings, ...]
-
-
-def _load_yaml(path: Path) -> Mapping[str, object]:
-    try:
-        raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise ConfigError(f"配置文件不存在：{path}") from exc
-    except OSError as exc:
-        raise ConfigError(f"无法读取配置文件：{path}") from exc
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"YAML 格式错误：{path}") from exc
-    return _as_mapping(raw, str(path))
-
-
-def _as_mapping(value: object, field: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise ConfigError(f"配置项 {field} 必须是对象")
-    if not all(isinstance(key, str) for key in value):
-        raise ConfigError(f"配置项 {field} 的键必须是字符串")
-    return value
+    rules: tuple[RuleDefinition, ...]
 
 
 def _required_mapping(root: Mapping[str, object], key: str) -> Mapping[str, object]:
@@ -136,8 +118,8 @@ def _positive_number(values: Mapping[str, object], key: str, field: str) -> floa
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise ConfigError(f"配置项 {field} 必须是数字")
     result = float(value)
-    if result <= 0:
-        raise ConfigError(f"配置项 {field} 必须大于 0")
+    if not math.isfinite(result) or result <= 0:
+        raise ConfigError(f"配置项 {field} 必须是大于 0 的有限数值")
     return result
 
 
@@ -253,16 +235,25 @@ def _parse_stocks(root: Mapping[str, object]) -> tuple[StockSettings, ...]:
     return tuple(stocks)
 
 
-def load_config(settings_path: Path, stocks_path: Path) -> AppConfig:
-    """加载两个配置文件，并在启动前完成字段和跨文件校验。"""
+def load_config(
+    settings_path: Path,
+    stocks_path: Path,
+    rules_path: Path,
+) -> AppConfig:
+    """加载三个配置文件，并在启动前完成字段和跨文件校验。"""
 
     settings_root = _load_yaml(settings_path)
     stocks_root = _load_yaml(stocks_path)
+    stocks = _parse_stocks(stocks_root)
     return AppConfig(
         app=_parse_app(settings_root),
         runtime=_parse_runtime(settings_root),
         market=_parse_market(settings_root),
         storage=_parse_storage(settings_root),
         notify=_parse_notify(settings_root),
-        stocks=_parse_stocks(stocks_root),
+        stocks=stocks,
+        rules=load_rule_definitions(
+            rules_path,
+            frozenset(stock.code for stock in stocks),
+        ),
     )

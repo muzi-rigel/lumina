@@ -1,0 +1,44 @@
+rules:
+  - id: day-rise-3
+    name: 日内上涨达到3%
+    type: DAY_CHANGE_PERCENT
+    enabled: true
+    direction: RISE
+    threshold: "3.0"
+    severity: WARNING
+    cooldown_seconds: 300
+
+  - id: day-fall-3
+    name: 日内下跌达到3%
+    type: DAY_CHANGE_PERCENT
+    enabled: true
+    direction: FALL
+    threshold: "3.0"
+    severity: WARNING
+    cooldown_seconds: 300
+
+  - id: window-rise-5m
+    name: 5分钟上涨达到1.5%
+    type: WINDOW_CHANGE_PERCENT
+    enabled: true
+    direction: RISE
+    threshold: "1.5"
+    window_seconds: 300
+    severity: CRITICAL
+    cooldown_seconds: 600
+    targets:
+      instrument_types:
+        - ETF
+
+  - id: window-fall-5m
+    name: 5分钟下跌达到1.5%
+    type: WINDOW_CHANGE_PERCENT
+    enabled: true
+    direction: FALL
+    threshold: "1.5"
+    window_seconds: 300
+    severity: CRITICAL
+    cooldown_seconds: 600
+    targets:
+      instrument_types:
+        - ETF

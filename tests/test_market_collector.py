@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -10,7 +10,12 @@ from app.market.collector import MarketCollector
 from app.market.model import InstrumentType, MarketInstrument, MarketQuote
 from app.market.source import MarketSource, MarketSourceError, QuoteBatch, QuoteFailure
 from app.monitor.engine import MonitorEngine
-from app.monitor.rules import RuleResult
+from app.monitor.model import (
+    AlertEvent,
+    AlertSeverity,
+    RuleDirection,
+    RuleType,
+)
 
 FIXED_TIME = datetime(2026, 7, 31, 9, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
 
@@ -65,17 +70,41 @@ class FlakySource(MarketSource):
 
 
 class RecordingMonitorEngine(MonitorEngine):
-    def __init__(self, exploding_code: str | None = None) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        exploding_code: str | None = None,
+        alerts: list[AlertEvent] | None = None,
+    ) -> None:
         self.exploding_code = exploding_code
+        self.alerts = alerts or []
         self.received: list[MarketQuote] = []
 
-    def evaluate(self, quotes: Iterable[MarketQuote]) -> list[RuleResult]:
-        quote = tuple(quotes)[0]
+    def evaluate(self, quote: MarketQuote) -> list[AlertEvent]:
         self.received.append(quote)
         if quote.symbol == self.exploding_code:
             raise RuntimeError("模拟监控引擎异常")
-        return []
+        return self.alerts
+
+
+def _alert(quote: MarketQuote) -> AlertEvent:
+    return AlertEvent(
+        code=quote.symbol,
+        name=quote.name,
+        instrument_type=quote.instrument.type,
+        rule_id="day-rise",
+        rule_name="日内上涨",
+        rule_type=RuleType.DAY_CHANGE_PERCENT,
+        direction=RuleDirection.RISE,
+        severity=AlertSeverity.WARNING,
+        triggered_at=quote.timestamp,
+        current_price=quote.price,
+        actual_change_percent=Decimal("1.25"),
+        threshold=Decimal("1"),
+        window_seconds=None,
+        reference_price=quote.previous_close,
+        reference_time=None,
+        message="测试告警",
+    )
 
 
 def _batch(
@@ -144,6 +173,20 @@ def test_monitor_exception_isolated_per_quote(caplog: pytest.LogCaptureFixture) 
     assert [quote.symbol for quote in engine.received] == [first.code, second.code]
     assert "行情处理异常 code=510300" in caplog.text
     assert "error_type=RuntimeError reason=模拟监控引擎异常" in caplog.text
+
+
+def test_collector_logs_alert_event(caplog: pytest.LogCaptureFixture) -> None:
+    instrument = _instrument("510300", "沪深300ETF")
+    quote = _quote(instrument)
+    engine = RecordingMonitorEngine(alerts=[_alert(quote)])
+    collector = MarketCollector(StubSource(_batch((quote,))), [instrument], engine)
+
+    with caplog.at_level(logging.WARNING, logger="app.market.collector"):
+        collector.collect_once()
+
+    assert "alert rule_id=day-rise code=510300 name=沪深300ETF" in caplog.text
+    assert "actual_change_pct=1.2500 threshold=1.0000" in caplog.text
+    assert "reference_price=4.000 reference_time=N/A" in caplog.text
 
 
 def test_market_source_error_only_ends_current_cycle(

@@ -25,7 +25,9 @@ stocks:
 """,
         encoding="utf-8",
     )
-    config = load_config(settings_path, stocks_path)
+    rules_path = tmp_path / "rules.yaml"
+    rules_path.write_text("rules: []\n", encoding="utf-8")
+    config = load_config(settings_path, stocks_path, rules_path)
 
     batch = build_market_collector(config).collect_once()
 

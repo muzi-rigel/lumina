@@ -1,55 +1,70 @@
-from datetime import UTC, datetime
+import logging
+from datetime import datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
-from app.market.model import InstrumentType, MarketInstrument, MarketQuote
+import pytest
+
+from app.market.model import MarketQuote
 from app.monitor.engine import MonitorEngine
-from app.monitor.rules import MonitorRule, RuleResult
+from app.monitor.history import QuoteHistory
+from app.monitor.model import RuleDefinition, RuleEvaluation
+from app.monitor.rules import MonitorRule, create_rule
+from app.monitor.state import AlertStateStore
+from tests.factories import make_quote, make_rule
+
+TZ = ZoneInfo("Asia/Shanghai")
+START = datetime(2026, 8, 8, 9, 30, tzinfo=TZ)
 
 
 class BrokenRule(MonitorRule):
-    @property
-    def name(self) -> str:
-        return "broken"
+    def __init__(self, definition: RuleDefinition) -> None:
+        super().__init__(definition)
 
-    def evaluate(self, quote: MarketQuote) -> RuleResult:
-        del quote
-        raise ValueError("模拟坏数据")
-
-
-class TriggerRule(MonitorRule):
-    @property
-    def name(self) -> str:
-        return "trigger"
-
-    def evaluate(self, quote: MarketQuote) -> RuleResult:
-        return RuleResult(
-            rule_name=self.name,
-            symbol=quote.symbol,
-            triggered=True,
-            message="测试触发",
-        )
+    def evaluate(self, quote: MarketQuote, history: QuoteHistory) -> RuleEvaluation:
+        del quote, history
+        raise ValueError("模拟坏规则")
 
 
-def test_monitor_engine_isolates_rule_exception() -> None:
-    quote = MarketQuote(
-        instrument=MarketInstrument(
-            code="000001",
-            name="测试标的",
-            type=InstrumentType.INDEX,
-        ),
-        timestamp=datetime.now(UTC),
-        source="test",
-        price=Decimal("10.00"),
-        previous_close=Decimal("9.90"),
-        open_price=Decimal("9.95"),
-        high_price=Decimal("10.10"),
-        low_price=Decimal("9.80"),
-        volume=100_000,
-        turnover=Decimal("1000000.00"),
-    )
-    engine = MonitorEngine([BrokenRule(), TriggerRule()])
+def _engine(*rules: MonitorRule) -> MonitorEngine:
+    return MonitorEngine(rules, QuoteHistory(600, 200, TZ), AlertStateStore())
 
-    results = engine.evaluate([quote])
 
-    assert len(results) == 1
-    assert results[0].rule_name == "trigger"
+def test_monitor_engine_isolates_each_rule_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    broken = BrokenRule(make_rule(rule_id="broken"))
+    working = create_rule(make_rule(rule_id="working", threshold="1"))
+    engine = _engine(broken, working)
+
+    with caplog.at_level(logging.ERROR, logger="app.monitor.engine"):
+        alerts = engine.evaluate(make_quote(START, price="10.1"))
+
+    assert [alert.rule_id for alert in alerts] == ["working"]
+    assert "rule_id=broken code=510300 error_type=ValueError reason=模拟坏规则" in caplog.text
+
+
+def test_alert_contains_explainable_reference_data() -> None:
+    engine = _engine(create_rule(make_rule(threshold="1")))
+
+    alert = engine.evaluate(make_quote(START, price="10.1"))[0]
+
+    assert alert.reference_price == Decimal("10")
+    assert alert.reference_time is None
+    assert alert.direction == make_rule().direction
+
+
+def test_new_natural_date_resets_rule_state() -> None:
+    engine = _engine(create_rule(make_rule(threshold="1", cooldown_seconds=86_400)))
+
+    assert len(engine.evaluate(make_quote(START, price="10.1"))) == 1
+    assert engine.evaluate(make_quote(START + timedelta(minutes=1), price="10.2")) == []
+    next_day = START + timedelta(days=1)
+    assert len(engine.evaluate(make_quote(next_day, price="10.1"))) == 1
+
+
+def test_out_of_order_quote_is_not_evaluated() -> None:
+    engine = _engine(create_rule(make_rule(threshold="1")))
+    engine.evaluate(make_quote(START + timedelta(seconds=5), price="10"))
+
+    assert engine.evaluate(make_quote(START, price="11")) == []

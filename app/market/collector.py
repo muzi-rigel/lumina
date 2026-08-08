@@ -8,6 +8,8 @@ from collections.abc import Sequence
 from app.market.model import MarketInstrument, MarketQuote
 from app.market.source import MarketSource, MarketSourceError, QuoteBatch, QuoteFailure
 from app.monitor.engine import MonitorEngine
+from app.monitor.formatting import format_percent
+from app.monitor.model import AlertEvent, RuleDirection
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +53,7 @@ class MarketCollector:
         self._log_quote(quote)
         try:
             # 单条交给监控引擎，确保未知异常不会中断同批其他行情。
-            self._monitor_engine.evaluate((quote,))
+            alerts = self._monitor_engine.evaluate(quote)
         except Exception as exc:
             logger.error(
                 "行情处理异常 code=%s error_type=%s reason=%s",
@@ -60,6 +62,38 @@ class MarketCollector:
                 exc,
                 exc_info=True,
             )
+            return
+        for alert in alerts:
+            self._log_alert(alert)
+
+    @staticmethod
+    def _log_alert(alert: AlertEvent) -> None:
+        effective_threshold = (
+            alert.threshold if alert.direction is RuleDirection.RISE else -alert.threshold
+        )
+        reference_time = (
+            "N/A"
+            if alert.reference_time is None
+            else alert.reference_time.isoformat(timespec="seconds")
+        )
+        window_seconds = "N/A" if alert.window_seconds is None else str(alert.window_seconds)
+        logger.warning(
+            "alert rule_id=%s code=%s name=%s severity=%s direction=%s "
+            "actual_change_pct=%s threshold=%s effective_threshold=%s "
+            "reference_price=%s reference_time=%s window_seconds=%s triggered_at=%s",
+            alert.rule_id,
+            alert.code,
+            alert.name,
+            alert.severity,
+            alert.direction,
+            format_percent(alert.actual_change_percent),
+            format_percent(alert.threshold),
+            format_percent(effective_threshold),
+            alert.reference_price,
+            reference_time,
+            window_seconds,
+            alert.triggered_at.isoformat(timespec="seconds"),
+        )
 
     @staticmethod
     def _log_failure(failure: QuoteFailure) -> None:

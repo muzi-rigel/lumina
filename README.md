@@ -1,7 +1,7 @@
 # Lumina
 
-Lumina 是一个长期运行的 A 股智能监控与研究系统。目前仓库仅包含生产服务基础框架，
-尚未实现行情采集、异动规则或消息发送。
+Lumina 是一个长期运行的 A 股智能监控与研究系统。当前已具备 Mock 批量行情采集、
+短期内存行情窗口，以及日内和指定窗口涨跌幅告警；尚未接入真实行情和消息发送。
 
 ## 环境要求
 
@@ -20,13 +20,16 @@ python3.11 -m venv .venv
 启动服务：
 
 ```bash
-.venv/bin/lumina --settings config/settings.yaml --stocks config/stocks.yaml
+.venv/bin/lumina \
+  --settings config/settings.yaml \
+  --stocks config/stocks.yaml \
+  --rules config/rules.yaml
 ```
 
 按 `Ctrl+C` 后，服务会完成当前任务并安全停止。SQLite 数据默认写入
 `data/lumina.db`，该目录中的运行数据不会提交到 Git。
 
-启动时会检查两个配置文件、日志目录、数据目录和配置时区下的系统时间。
+启动时会检查三个配置文件、日志目录、数据目录和配置时区下的系统时间。
 日志同时输出到控制台和 `logs/lumina.log`。
 
 行情采集配置位于 `settings.yaml`：
@@ -43,10 +46,15 @@ market:
 报错，不会回退到 Mock。每个周期对所有启用标的执行一次批量查询，单标的失败或
 系统级行情源故障不会导致长期服务退出。
 
+告警规则位于 `config/rules.yaml`。阈值统一使用正数幅度，由 `direction` 表达上涨或
+下跌；窗口历史与告警状态仅保存在内存，服务重启后会丢失。规则匹配时只生成
+`AlertEvent` 并写入结构化日志，不会发送企业微信。
+
 ## 质量检查
 
 ```bash
 .venv/bin/ruff check .
+.venv/bin/ruff format --check .
 .venv/bin/mypy app
 .venv/bin/pytest
 ```
@@ -54,14 +62,15 @@ market:
 ## Ubuntu 部署
 
 建议代码安装到 `/opt/lumina`，配置保存到
-`/etc/lumina/settings.yaml` 和 `/etc/lumina/stocks.yaml`。生产模板已将数据库设置为
-`/var/lib/lumina/lumina.db`。
+`/etc/lumina/settings.yaml`、`/etc/lumina/stocks.yaml` 和
+`/etc/lumina/rules.yaml`。生产模板已将数据库设置为 `/var/lib/lumina/lumina.db`。
 
 ```bash
 sudo useradd --system --home /opt/lumina --shell /usr/sbin/nologin lumina
 sudo install -d -o lumina -g lumina /opt/lumina /etc/lumina
 sudo cp config/settings.production.yaml /etc/lumina/settings.yaml
 sudo cp config/stocks.yaml /etc/lumina/stocks.yaml
+sudo cp config/rules.yaml /etc/lumina/rules.yaml
 sudo cp deploy/systemd/lumina.service /etc/systemd/system/lumina.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now lumina.service
@@ -83,7 +92,7 @@ Lumina 会结束调度循环并退出。
 - `app/market`：标准化行情模型、批量数据源协议、Mock 源及供应方实现。
 - `app/market/factory.py`：根据配置创建行情源，拒绝未知或尚未实现的数据源。
 - `app/market/collector.py`：批量采集、结构化日志和逐行情监控处理入口。
-- `app/monitor`：监控引擎和规则接口。
+- `app/monitor`：内存行情历史、涨跌幅规则、边沿触发状态和告警事件模型。
 - `app/notify`：企业微信通知。
 - `app/storage`：SQLite 连接和事务边界。
 - `app/main.py`：依赖装配及服务生命周期。

@@ -6,7 +6,7 @@ from app.core.config import AppConfig
 from app.market.collector import MarketCollector
 from app.market.factory import create_market_source
 from app.market.model import InstrumentType, MarketInstrument
-from app.monitor.engine import MonitorEngine
+from app.monitor.factory import build_monitor_engine
 
 
 class MarketBootstrapError(RuntimeError):
@@ -31,5 +31,9 @@ def build_market_collector(config: AppConfig) -> MarketCollector:
     return MarketCollector(
         source=create_market_source(config.market),
         instruments=instruments,
-        monitor_engine=MonitorEngine(),
+        monitor_engine=build_monitor_engine(
+            definitions=config.rules,
+            interval_seconds=config.market.interval_seconds,
+            timezone_name=config.app.timezone,
+        ),
     )

@@ -43,11 +43,12 @@ def _run_startup_checks(
     config: AppConfig,
     settings_path: Path,
     stocks_path: Path,
+    rules_path: Path,
     log_dir: Path,
 ) -> None:
     """执行不会访问外部网络的启动自检。"""
 
-    logger.info("✔ 配置文件存在：%s, %s", settings_path, stocks_path)
+    logger.info("✔ 配置文件存在：%s, %s, %s", settings_path, stocks_path, rules_path)
     logger.info("✔ 日志目录存在：%s", log_dir)
 
     data_dir = config.storage.path.parent
@@ -125,6 +126,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=Path(os.environ.get("LUMINA_STOCKS", "config/stocks.yaml")),
         help="stocks.yaml 路径",
     )
+    parser.add_argument(
+        "--rules",
+        type=Path,
+        default=Path(os.environ.get("LUMINA_RULES", "config/rules.yaml")),
+        help="rules.yaml 路径",
+    )
     return parser
 
 
@@ -134,10 +141,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     log_dir = Path(os.environ.get("LUMINA_LOG_DIR", "logs"))
     try:
-        config = load_config(args.settings, args.stocks)
+        config = load_config(args.settings, args.stocks, args.rules)
         _ensure_directory(log_dir, "日志目录")
         configure_logging(config.runtime.log_level, log_dir / "lumina.log")
-        _run_startup_checks(config, args.settings, args.stocks, log_dir)
+        _run_startup_checks(config, args.settings, args.stocks, args.rules, log_dir)
         market_collector = build_market_collector(config)
         LuminaService(config, market_collector).run()
     except (

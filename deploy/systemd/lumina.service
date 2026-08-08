@@ -10,7 +10,7 @@ Group=lumina
 WorkingDirectory=/opt/lumina
 Environment=PYTHONUNBUFFERED=1
 Environment=LUMINA_LOG_DIR=/var/log/lumina
-ExecStart=/opt/lumina/.venv/bin/lumina --settings /etc/lumina/settings.yaml --stocks /etc/lumina/stocks.yaml
+ExecStart=/opt/lumina/.venv/bin/lumina --settings /etc/lumina/settings.yaml --stocks /etc/lumina/stocks.yaml --rules /etc/lumina/rules.yaml
 
 Restart=on-failure
 RestartSec=10s

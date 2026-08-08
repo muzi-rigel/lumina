@@ -51,11 +51,13 @@ stocks:
 """,
         encoding="utf-8",
     )
-    config = load_config(settings_path, stocks_path)
+    rules_path = tmp_path / "rules.yaml"
+    rules_path.write_text("rules: []\n", encoding="utf-8")
+    config = load_config(settings_path, stocks_path, rules_path)
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
 
-    _run_startup_checks(config, settings_path, stocks_path, log_dir)
+    _run_startup_checks(config, settings_path, stocks_path, rules_path, log_dir)
 
     assert config.storage.path.parent.is_dir()
 
@@ -63,7 +65,8 @@ stocks:
 def test_graceful_exit_is_idempotent(tmp_path: Path) -> None:
     settings_path = Path("config/settings.yaml")
     stocks_path = Path("config/stocks.yaml")
-    config = load_config(settings_path, stocks_path)
+    rules_path = Path("config/rules.yaml")
+    config = load_config(settings_path, stocks_path, rules_path)
     service = LuminaService(config, build_market_collector(config))
 
     service._handle_signal(signal.SIGTERM, None)
@@ -90,6 +93,11 @@ def test_main_rejects_unimplemented_market_source(
         Path("config/stocks.yaml").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    rules_path = tmp_path / "rules.yaml"
+    rules_path.write_text(
+        Path("config/rules.yaml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
     monkeypatch.setenv("LUMINA_LOG_DIR", str(tmp_path / "logs"))
 
     exit_code = main(
@@ -98,6 +106,8 @@ def test_main_rejects_unimplemented_market_source(
             str(settings_path),
             "--stocks",
             str(stocks_path),
+            "--rules",
+            str(rules_path),
         ]
     )
 
