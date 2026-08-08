@@ -7,13 +7,17 @@ from app.market.collector import MarketCollector
 from app.market.factory import create_market_source
 from app.market.model import InstrumentType, MarketInstrument
 from app.monitor.factory import build_monitor_engine
+from app.storage.repository import MarketRepository
 
 
 class MarketBootstrapError(RuntimeError):
     """行情采集依赖无法完成启动装配。"""
 
 
-def build_market_collector(config: AppConfig) -> MarketCollector:
+def build_market_collector(
+    config: AppConfig,
+    repository: MarketRepository,
+) -> MarketCollector:
     """转换启用标的并装配行情源、监控引擎和采集器。"""
 
     instruments = tuple(
@@ -36,4 +40,5 @@ def build_market_collector(config: AppConfig) -> MarketCollector:
             interval_seconds=config.market.interval_seconds,
             timezone_name=config.app.timezone,
         ),
+        repository=repository,
     )

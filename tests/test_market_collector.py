@@ -74,24 +74,57 @@ class RecordingMonitorEngine(MonitorEngine):
         self,
         exploding_code: str | None = None,
         alerts: list[AlertEvent] | None = None,
+        operations: list[str] | None = None,
     ) -> None:
         self.exploding_code = exploding_code
         self.alerts = alerts or []
+        self.operations = operations
         self.received: list[MarketQuote] = []
 
     def evaluate(self, quote: MarketQuote) -> list[AlertEvent]:
+        if self.operations is not None:
+            self.operations.append(f"evaluate:{quote.symbol}")
         self.received.append(quote)
         if quote.symbol == self.exploding_code:
             raise RuntimeError("模拟监控引擎异常")
         return self.alerts
 
 
-def _alert(quote: MarketQuote) -> AlertEvent:
+class RecordingRepository:
+    def __init__(
+        self,
+        *,
+        failing_quote_codes: frozenset[str] = frozenset(),
+        failing_rule_ids: frozenset[str] = frozenset(),
+        operations: list[str] | None = None,
+    ) -> None:
+        self.failing_quote_codes = failing_quote_codes
+        self.failing_rule_ids = failing_rule_ids
+        self.operations = operations
+        self.quotes: list[MarketQuote] = []
+        self.alerts: list[AlertEvent] = []
+
+    def save_quote_snapshot(self, quote: MarketQuote) -> None:
+        if self.operations is not None:
+            self.operations.append(f"save_quote:{quote.symbol}")
+        if quote.symbol in self.failing_quote_codes:
+            raise RuntimeError("模拟行情存储故障")
+        self.quotes.append(quote)
+
+    def save_alert_event(self, alert: AlertEvent) -> None:
+        if self.operations is not None:
+            self.operations.append(f"save_alert:{alert.rule_id}")
+        if alert.rule_id in self.failing_rule_ids:
+            raise RuntimeError("模拟告警存储故障")
+        self.alerts.append(alert)
+
+
+def _alert(quote: MarketQuote, rule_id: str = "day-rise") -> AlertEvent:
     return AlertEvent(
         code=quote.symbol,
         name=quote.name,
         instrument_type=quote.instrument.type,
-        rule_id="day-rise",
+        rule_id=rule_id,
         rule_name="日内上涨",
         rule_type=RuleType.DAY_CHANGE_PERCENT,
         direction=RuleDirection.RISE,
@@ -126,7 +159,8 @@ def test_collector_processes_normal_batch_with_unified_quote(
     instrument = _instrument("510300", "沪深300ETF")
     quote = _quote(instrument)
     engine = RecordingMonitorEngine()
-    collector = MarketCollector(StubSource(_batch((quote,))), [instrument], engine)
+    repository = RecordingRepository()
+    collector = MarketCollector(StubSource(_batch((quote,))), [instrument], engine, repository)
 
     with caplog.at_level(logging.INFO, logger="app.market.collector"):
         batch = collector.collect_once()
@@ -134,6 +168,7 @@ def test_collector_processes_normal_batch_with_unified_quote(
     assert batch is not None
     assert engine.received == [quote]
     assert isinstance(engine.received[0], MarketQuote)
+    assert repository.quotes == [quote]
     assert "行情成功 code=510300 name=沪深300ETF" in caplog.text
     assert "price=4.050 change=0.050 change_pct=1.2500%" in caplog.text
 
@@ -144,10 +179,12 @@ def test_partial_failure_does_not_drop_success(caplog: pytest.LogCaptureFixture)
     quote = _quote(success)
     failure = QuoteFailure(failed, "模拟失败", retryable=True)
     engine = RecordingMonitorEngine()
+    repository = RecordingRepository()
     collector = MarketCollector(
         StubSource(_batch((quote,), (failure,))),
         [success, failed],
         engine,
+        repository,
     )
 
     with caplog.at_level(logging.WARNING, logger="app.market.collector"):
@@ -161,10 +198,12 @@ def test_monitor_exception_isolated_per_quote(caplog: pytest.LogCaptureFixture) 
     first = _instrument("510300", "沪深300ETF")
     second = _instrument("512480", "半导体ETF")
     engine = RecordingMonitorEngine(exploding_code=first.code)
+    repository = RecordingRepository()
     collector = MarketCollector(
         StubSource(_batch((_quote(first), _quote(second)))),
         [first, second],
         engine,
+        repository,
     )
 
     with caplog.at_level(logging.ERROR, logger="app.market.collector"):
@@ -179,7 +218,8 @@ def test_collector_logs_alert_event(caplog: pytest.LogCaptureFixture) -> None:
     instrument = _instrument("510300", "沪深300ETF")
     quote = _quote(instrument)
     engine = RecordingMonitorEngine(alerts=[_alert(quote)])
-    collector = MarketCollector(StubSource(_batch((quote,))), [instrument], engine)
+    repository = RecordingRepository()
+    collector = MarketCollector(StubSource(_batch((quote,))), [instrument], engine, repository)
 
     with caplog.at_level(logging.WARNING, logger="app.market.collector"):
         collector.collect_once()
@@ -187,6 +227,64 @@ def test_collector_logs_alert_event(caplog: pytest.LogCaptureFixture) -> None:
     assert "alert rule_id=day-rise code=510300 name=沪深300ETF" in caplog.text
     assert "actual_change_pct=1.2500 threshold=1.0000" in caplog.text
     assert "reference_price=4.000 reference_time=N/A" in caplog.text
+    assert repository.alerts == [_alert(quote)]
+
+
+def test_quote_storage_failure_does_not_skip_rules_or_other_quotes(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    first = _instrument("510300", "沪深300ETF")
+    second = _instrument("512480", "半导体ETF")
+    engine = RecordingMonitorEngine()
+    repository = RecordingRepository(failing_quote_codes=frozenset({first.code}))
+    collector = MarketCollector(
+        StubSource(_batch((_quote(first), _quote(second)))),
+        [first, second],
+        engine,
+        repository,
+    )
+
+    with caplog.at_level(logging.ERROR, logger="app.market.collector"):
+        collector.collect_once()
+
+    assert [quote.symbol for quote in engine.received] == [first.code, second.code]
+    assert repository.quotes == [_quote(second)]
+    assert "行情保存失败 code=510300 quote_time=" in caplog.text
+    assert "error_type=RuntimeError reason=模拟行情存储故障" in caplog.text
+
+
+def test_alert_storage_failure_still_logs_and_continues(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    instrument = _instrument("510300", "沪深300ETF")
+    quote = _quote(instrument)
+    first_alert = _alert(quote, "first")
+    second_alert = _alert(quote, "second")
+    engine = RecordingMonitorEngine(alerts=[first_alert, second_alert])
+    repository = RecordingRepository(failing_rule_ids=frozenset({"first"}))
+    collector = MarketCollector(StubSource(_batch((quote,))), [instrument], engine, repository)
+
+    with caplog.at_level(logging.WARNING, logger="app.market.collector"):
+        collector.collect_once()
+
+    assert repository.alerts == [second_alert]
+    assert "告警保存失败 code=510300 rule_id=first" in caplog.text
+    assert "error_type=RuntimeError reason=模拟告警存储故障" in caplog.text
+    assert "alert rule_id=first" in caplog.text
+    assert "alert rule_id=second" in caplog.text
+
+
+def test_storage_and_rule_processing_order() -> None:
+    operations: list[str] = []
+    instrument = _instrument("510300", "沪深300ETF")
+    quote = _quote(instrument)
+    engine = RecordingMonitorEngine(alerts=[_alert(quote)], operations=operations)
+    repository = RecordingRepository(operations=operations)
+    collector = MarketCollector(StubSource(_batch((quote,))), [instrument], engine, repository)
+
+    collector.collect_once()
+
+    assert operations == ["save_quote:510300", "evaluate:510300", "save_alert:day-rise"]
 
 
 def test_market_source_error_only_ends_current_cycle(
@@ -194,8 +292,9 @@ def test_market_source_error_only_ends_current_cycle(
 ) -> None:
     instrument = _instrument("510300", "沪深300ETF")
     engine = RecordingMonitorEngine()
+    repository = RecordingRepository()
     source = FlakySource(_batch((_quote(instrument, source="flaky"),), source="flaky"))
-    collector = MarketCollector(source, [instrument], engine)
+    collector = MarketCollector(source, [instrument], engine, repository)
 
     with caplog.at_level(logging.ERROR, logger="app.market.collector"):
         first_result = collector.collect_once()

@@ -6,6 +6,8 @@ import pytest
 from app.core.config import load_config
 from app.main import LuminaService, _ensure_directory, _run_startup_checks, main
 from app.market.bootstrap import build_market_collector
+from app.storage.database import SQLiteDatabase
+from app.storage.repository import SQLiteMarketRepository
 
 
 def test_ensure_directory_creates_missing_path(tmp_path: Path) -> None:
@@ -67,7 +69,13 @@ def test_graceful_exit_is_idempotent(tmp_path: Path) -> None:
     stocks_path = Path("config/stocks.yaml")
     rules_path = Path("config/rules.yaml")
     config = load_config(settings_path, stocks_path, rules_path)
-    service = LuminaService(config, build_market_collector(config))
+    database = SQLiteDatabase(tmp_path / "lumina.db", busy_timeout_seconds=1)
+    repository = SQLiteMarketRepository(database)
+    service = LuminaService(
+        config,
+        build_market_collector(config, repository),
+        database,
+    )
 
     service._handle_signal(signal.SIGTERM, None)
     service._handle_signal(signal.SIGTERM, None)

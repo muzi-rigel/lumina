@@ -19,7 +19,8 @@ from app.core.scheduler import IntervalScheduler
 from app.market.bootstrap import MarketBootstrapError, build_market_collector
 from app.market.collector import MarketCollector
 from app.market.factory import MarketSourceCreationError
-from app.storage.sqlite import SQLiteStorage
+from app.storage.database import SQLiteDatabase
+from app.storage.repository import SQLiteMarketRepository
 
 logger = logging.getLogger(__name__)
 
@@ -66,14 +67,16 @@ def _run_startup_checks(
 class LuminaService:
     """装配基础设施并管理服务生命周期。"""
 
-    def __init__(self, config: AppConfig, market_collector: MarketCollector) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        market_collector: MarketCollector,
+        database: SQLiteDatabase,
+    ) -> None:
         self._config = config
         self._market_collector = market_collector
         self._scheduler = IntervalScheduler(config.market.interval_seconds)
-        self._storage = SQLiteStorage(
-            config.storage.path,
-            config.storage.busy_timeout_seconds,
-        )
+        self._database = database
         self._stopping = False
 
     def _handle_signal(self, signum: int, frame: FrameType | None) -> None:
@@ -95,7 +98,7 @@ class LuminaService:
         """初始化依赖并运行，直到收到系统停止信号。"""
 
         self._install_signal_handlers()
-        self._storage.initialize()
+        self._database.initialize()
         self._scheduler.add_task("market-collection", self._collect_market_quotes)
 
         enabled_count = sum(stock.enabled for stock in self._config.stocks)
@@ -145,8 +148,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         _ensure_directory(log_dir, "日志目录")
         configure_logging(config.runtime.log_level, log_dir / "lumina.log")
         _run_startup_checks(config, args.settings, args.stocks, args.rules, log_dir)
-        market_collector = build_market_collector(config)
-        LuminaService(config, market_collector).run()
+        database = SQLiteDatabase(
+            config.storage.path,
+            config.storage.busy_timeout_seconds,
+        )
+        repository = SQLiteMarketRepository(database)
+        market_collector = build_market_collector(config, repository)
+        LuminaService(config, market_collector, database).run()
     except (
         ConfigError,
         StartupError,

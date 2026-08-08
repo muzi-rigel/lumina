@@ -102,3 +102,15 @@ Lumina 是长期运行在 Ubuntu 22.04 LTS 云服务器上的 A 股智能监控�
 - 完成修改后，应说明实际改动、影响范围、验证方式、验证结果和仍存在的风险。
 - 测试和验证应与修改风险相匹配；涉及长期运行、重试、数据持久化或告警链路时，应重点验证失败场景。
 - 不得声称未实际执行的测试已经通过。
+
+## Development workflow
+
+For each new phase:
+
+1. First perform read-only analysis.
+2. Produce an implementation plan.
+3. Wait for confirmation before modifying code.
+4. Keep changes scoped to the phase goal.
+5. Run tests and static checks after implementation.
+6. Do not introduce new infrastructure unless explicitly justified.
+7. Prefer simple reliable solutions over enterprise complexity.

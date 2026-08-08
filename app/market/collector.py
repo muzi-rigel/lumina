@@ -10,6 +10,7 @@ from app.market.source import MarketSource, MarketSourceError, QuoteBatch, Quote
 from app.monitor.engine import MonitorEngine
 from app.monitor.formatting import format_percent
 from app.monitor.model import AlertEvent, RuleDirection
+from app.storage.repository import MarketRepository
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +23,14 @@ class MarketCollector:
         source: MarketSource,
         instruments: Sequence[MarketInstrument],
         monitor_engine: MonitorEngine,
+        repository: MarketRepository,
     ) -> None:
         if not instruments:
             raise ValueError("行情采集标的不能为空")
         self._source = source
         self._instruments = tuple(instruments)
         self._monitor_engine = monitor_engine
+        self._repository = repository
 
     @property
     def source_name(self) -> str:
@@ -50,6 +53,18 @@ class MarketCollector:
         )
 
     def _process_quote(self, quote: MarketQuote) -> None:
+        try:
+            self._repository.save_quote_snapshot(quote)
+        except Exception as exc:
+            # 存储故障不能阻断实时检测，规则仍使用当前行情继续计算。
+            logger.error(
+                "行情保存失败 code=%s quote_time=%s error_type=%s reason=%s",
+                quote.symbol,
+                quote.timestamp.isoformat(timespec="seconds"),
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
         self._log_quote(quote)
         try:
             # 单条交给监控引擎，确保未知异常不会中断同批其他行情。
@@ -64,6 +79,18 @@ class MarketCollector:
             )
             return
         for alert in alerts:
+            try:
+                self._repository.save_alert_event(alert)
+            except Exception as exc:
+                logger.error(
+                    "告警保存失败 code=%s rule_id=%s trigger_time=%s error_type=%s reason=%s",
+                    alert.code,
+                    alert.rule_id,
+                    alert.triggered_at.isoformat(timespec="seconds"),
+                    type(exc).__name__,
+                    exc,
+                    exc_info=True,
+                )
             self._log_alert(alert)
 
     @staticmethod

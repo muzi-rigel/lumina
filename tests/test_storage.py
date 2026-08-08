@@ -2,11 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from app.storage.sqlite import SQLiteStorage, StorageError
+from app.storage.database import SQLiteDatabase, StorageError
 
 
 def test_sqlite_session_commits_data(tmp_path: Path) -> None:
-    storage = SQLiteStorage(tmp_path / "lumina.db", busy_timeout_seconds=1)
+    storage = SQLiteDatabase(tmp_path / "lumina.db", busy_timeout_seconds=1)
 
     with storage.session() as connection:
         connection.execute("CREATE TABLE sample (value TEXT NOT NULL)")
@@ -19,7 +19,7 @@ def test_sqlite_session_commits_data(tmp_path: Path) -> None:
 
 
 def test_sqlite_session_wraps_database_errors(tmp_path: Path) -> None:
-    storage = SQLiteStorage(tmp_path / "lumina.db", busy_timeout_seconds=1)
+    storage = SQLiteDatabase(tmp_path / "lumina.db", busy_timeout_seconds=1)
 
     with pytest.raises(StorageError), storage.session() as connection:
         connection.execute("SELECT * FROM missing_table")

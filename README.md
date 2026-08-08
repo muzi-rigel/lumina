@@ -50,6 +50,11 @@ market:
 下跌；窗口历史与告警状态仅保存在内存，服务重启后会丢失。规则匹配时只生成
 `AlertEvent` 并写入结构化日志，不会发送企业微信。
 
+每条成功行情会写入 SQLite 的 `quote_snapshot` 表，每个新产生的告警会写入
+`alert_event` 表。Decimal 使用文本保存，时间统一保存为 UTC ISO 8601；同代码、同
+行情时间的快照采用 last-write-wins。存储故障会记录 ERROR，但不会阻断规则计算或
+告警日志，避免数据库临时故障造成实时告警遗漏。
+
 ## 质量检查
 
 ```bash
@@ -94,7 +99,9 @@ Lumina 会结束调度循环并退出。
 - `app/market/collector.py`：批量采集、结构化日志和逐行情监控处理入口。
 - `app/monitor`：内存行情历史、涨跌幅规则、边沿触发状态和告警事件模型。
 - `app/notify`：企业微信通知。
-- `app/storage`：SQLite 连接和事务边界。
+- `app/storage/database.py`：SQLite 连接、事务边界和幂等表结构初始化。
+- `app/storage/models.py`：领域模型到持久化记录的类型化转换。
+- `app/storage/repository.py`：隔离行情快照与告警事件的 SQL 写入。
 - `app/main.py`：依赖装配及服务生命周期。
 
 当前 Mock 行情源完全在本地生成可重复数据；新浪、腾讯和企业微信模块均为明确的扩展
