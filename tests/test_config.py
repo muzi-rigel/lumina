@@ -22,6 +22,11 @@ storage:
 notify:
   wechat:
     enabled: false
+    webhook_env: LUMINA_WECHAT_WEBHOOK_URL
+    timeout_seconds: 5
+    max_attempts: 3
+    retry_backoff_seconds: 1
+    max_total_seconds: 15
 """
 
 VALID_STOCKS = """

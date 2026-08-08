@@ -6,6 +6,7 @@ import pytest
 from app.core.config import load_config
 from app.main import LuminaService, _ensure_directory, _run_startup_checks, main
 from app.market.bootstrap import build_market_collector
+from app.notify.notifier import NoopNotifier
 from app.storage.database import SQLiteDatabase
 from app.storage.repository import SQLiteMarketRepository
 
@@ -40,6 +41,11 @@ storage:
 notify:
   wechat:
     enabled: false
+    webhook_env: LUMINA_WECHAT_WEBHOOK_URL
+    timeout_seconds: 5
+    max_attempts: 3
+    retry_backoff_seconds: 1
+    max_total_seconds: 15
 """,
         encoding="utf-8",
     )
@@ -73,7 +79,7 @@ def test_graceful_exit_is_idempotent(tmp_path: Path) -> None:
     repository = SQLiteMarketRepository(database)
     service = LuminaService(
         config,
-        build_market_collector(config, repository),
+        build_market_collector(config, repository, NoopNotifier()),
         database,
     )
 

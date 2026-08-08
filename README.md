@@ -47,13 +47,18 @@ market:
 系统级行情源故障不会导致长期服务退出。
 
 告警规则位于 `config/rules.yaml`。阈值统一使用正数幅度，由 `direction` 表达上涨或
-下跌；窗口历史与告警状态仅保存在内存，服务重启后会丢失。规则匹配时只生成
-`AlertEvent` 并写入结构化日志，不会发送企业微信。
+下跌；窗口历史与告警状态仅保存在内存，服务重启后会丢失。规则匹配时生成
+`AlertEvent`，并依次执行结构化日志、告警持久化和已启用的通知渠道。
 
 每条成功行情会写入 SQLite 的 `quote_snapshot` 表，每个新产生的告警会写入
 `alert_event` 表。Decimal 使用文本保存，时间统一保存为 UTC ISO 8601；同代码、同
 行情时间的快照采用 last-write-wins。存储故障会记录 ERROR，但不会阻断规则计算或
 告警日志，避免数据库临时故障造成实时告警遗漏。
+
+企业微信机器人默认关闭。启用时将 `notify.wechat.enabled` 改为 `true`，并通过
+`LUMINA_WECHAT_WEBHOOK_URL` 环境变量提供 webhook。密钥不会写入 YAML 或日志。
+通知采用同步有限重试，并由 `max_total_seconds` 限制单条通知占用调度线程的总时间；
+通知失败不会影响后续告警。
 
 ## 质量检查
 
@@ -76,10 +81,19 @@ sudo install -d -o lumina -g lumina /opt/lumina /etc/lumina
 sudo cp config/settings.production.yaml /etc/lumina/settings.yaml
 sudo cp config/stocks.yaml /etc/lumina/stocks.yaml
 sudo cp config/rules.yaml /etc/lumina/rules.yaml
+sudo install -m 600 -o root -g root /dev/null /etc/lumina/lumina.env
 sudo cp deploy/systemd/lumina.service /etc/systemd/system/lumina.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now lumina.service
 ```
+
+如需启用企业微信，在 `/etc/lumina/lumina.env` 中设置：
+
+```bash
+LUMINA_WECHAT_WEBHOOK_URL=https://example.invalid/cgi-bin/webhook/send?key=REPLACE_ME
+```
+
+该文件应保持仅 root 可读。示例 URL 不能直接使用，必须替换为实际机器人 webhook。
 
 查看服务状态与日志：
 
@@ -98,11 +112,13 @@ Lumina 会结束调度循环并退出。
 - `app/market/factory.py`：根据配置创建行情源，拒绝未知或尚未实现的数据源。
 - `app/market/collector.py`：批量采集、结构化日志和逐行情监控处理入口。
 - `app/monitor`：内存行情历史、涨跌幅规则、边沿触发状态和告警事件模型。
-- `app/notify`：企业微信通知。
+- `app/notify/formatter.py`：将 `AlertEvent` 转换为通用 `MessagePayload`。
+- `app/notify/notifier.py`：通知渠道协议和禁用状态实现。
+- `app/notify/wechat.py`：企业微信同步发送、响应校验和有界重试。
 - `app/storage/database.py`：SQLite 连接、事务边界和幂等表结构初始化。
 - `app/storage/models.py`：领域模型到持久化记录的类型化转换。
 - `app/storage/repository.py`：隔离行情快照与告警事件的 SQL 写入。
 - `app/main.py`：依赖装配及服务生命周期。
 
-当前 Mock 行情源完全在本地生成可重复数据；新浪、腾讯和企业微信模块均为明确的扩展
-边界，不会发起外部请求。
+当前 Mock 行情源完全在本地生成可重复数据；新浪和腾讯模块仍为明确的扩展边界，不会
+发起外部请求。只有显式启用企业微信并提供 webhook 后，通知模块才会访问网络。

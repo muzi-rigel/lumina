@@ -1,4 +1,4 @@
-"""Lumina 双 YAML 配置加载与严格校验。"""
+"""Lumina 三份 YAML 配置的加载与严格校验。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.errors import ConfigError as ConfigError
+from app.core.notify_config import NotifySettings, parse_notify
 from app.core.rule_config import load_rule_definitions
 from app.core.yaml_loader import as_mapping as _as_mapping
 from app.core.yaml_loader import load_yaml as _load_yaml
@@ -54,20 +55,6 @@ class StorageSettings:
     type: str
     path: Path
     busy_timeout_seconds: float = 10.0
-
-
-@dataclass(frozen=True)
-class WeChatSettings:
-    """企业微信通知开关。"""
-
-    enabled: bool
-
-
-@dataclass(frozen=True)
-class NotifySettings:
-    """通知配置。"""
-
-    wechat: WeChatSettings
 
 
 @dataclass(frozen=True)
@@ -183,14 +170,6 @@ def _parse_storage(root: Mapping[str, object]) -> StorageSettings:
     )
 
 
-def _parse_notify(root: Mapping[str, object]) -> NotifySettings:
-    values = _required_mapping(root, "notify")
-    wechat = _required_mapping(values, "wechat")
-    return NotifySettings(
-        wechat=WeChatSettings(enabled=_required_bool(wechat, "enabled", "notify.wechat.enabled"))
-    )
-
-
 def _normalize_stock_code(value: object, index: int) -> str:
     field = f"stocks[{index}].code"
     if isinstance(value, bool):
@@ -250,7 +229,7 @@ def load_config(
         runtime=_parse_runtime(settings_root),
         market=_parse_market(settings_root),
         storage=_parse_storage(settings_root),
-        notify=_parse_notify(settings_root),
+        notify=parse_notify(settings_root),
         stocks=stocks,
         rules=load_rule_definitions(
             rules_path,

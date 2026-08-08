@@ -2,6 +2,7 @@ from pathlib import Path
 
 from app.core.config import load_config
 from app.market.bootstrap import build_market_collector
+from app.notify.notifier import NoopNotifier
 from app.storage.database import SQLiteDatabase
 from app.storage.repository import SQLiteMarketRepository
 
@@ -33,7 +34,11 @@ stocks:
 
     database = SQLiteDatabase(tmp_path / "lumina.db", busy_timeout_seconds=1)
     database.initialize()
-    batch = build_market_collector(config, SQLiteMarketRepository(database)).collect_once()
+    batch = build_market_collector(
+        config,
+        SQLiteMarketRepository(database),
+        NoopNotifier(),
+    ).collect_once()
 
     assert batch is not None
     assert [quote.symbol for quote in batch.quotes] == ["510300"]

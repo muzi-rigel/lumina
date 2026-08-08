@@ -7,6 +7,7 @@ from app.market.collector import MarketCollector
 from app.market.factory import create_market_source
 from app.market.model import InstrumentType, MarketInstrument
 from app.monitor.factory import build_monitor_engine
+from app.notify.notifier import Notifier
 from app.storage.repository import MarketRepository
 
 
@@ -17,6 +18,7 @@ class MarketBootstrapError(RuntimeError):
 def build_market_collector(
     config: AppConfig,
     repository: MarketRepository,
+    notifier: Notifier,
 ) -> MarketCollector:
     """转换启用标的并装配行情源、监控引擎和采集器。"""
 
@@ -41,4 +43,5 @@ def build_market_collector(
             timezone_name=config.app.timezone,
         ),
         repository=repository,
+        notifier=notifier,
     )

@@ -10,6 +10,7 @@ from app.market.source import MarketSource, MarketSourceError, QuoteBatch, Quote
 from app.monitor.engine import MonitorEngine
 from app.monitor.formatting import format_percent
 from app.monitor.model import AlertEvent, RuleDirection
+from app.notify.notifier import Notifier
 from app.storage.repository import MarketRepository
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ class MarketCollector:
         instruments: Sequence[MarketInstrument],
         monitor_engine: MonitorEngine,
         repository: MarketRepository,
+        notifier: Notifier,
     ) -> None:
         if not instruments:
             raise ValueError("行情采集标的不能为空")
@@ -31,6 +33,7 @@ class MarketCollector:
         self._instruments = tuple(instruments)
         self._monitor_engine = monitor_engine
         self._repository = repository
+        self._notifier = notifier
 
     @property
     def source_name(self) -> str:
@@ -79,6 +82,7 @@ class MarketCollector:
             )
             return
         for alert in alerts:
+            self._log_alert(alert)
             try:
                 self._repository.save_alert_event(alert)
             except Exception as exc:
@@ -91,7 +95,17 @@ class MarketCollector:
                     exc,
                     exc_info=True,
                 )
-            self._log_alert(alert)
+            try:
+                self._notifier.send(alert)
+            except Exception as exc:
+                logger.error(
+                    "告警通知失败 code=%s rule_id=%s error_type=%s reason=%s",
+                    alert.code,
+                    alert.rule_id,
+                    type(exc).__name__,
+                    exc,
+                    exc_info=True,
+                )
 
     @staticmethod
     def _log_alert(alert: AlertEvent) -> None:

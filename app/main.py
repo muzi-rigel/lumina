@@ -19,6 +19,7 @@ from app.core.scheduler import IntervalScheduler
 from app.market.bootstrap import MarketBootstrapError, build_market_collector
 from app.market.collector import MarketCollector
 from app.market.factory import MarketSourceCreationError
+from app.notify.factory import NotifierCreationError, create_notifier
 from app.storage.database import SQLiteDatabase
 from app.storage.repository import SQLiteMarketRepository
 
@@ -153,13 +154,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             config.storage.busy_timeout_seconds,
         )
         repository = SQLiteMarketRepository(database)
-        market_collector = build_market_collector(config, repository)
+        notifier = create_notifier(config.notify.wechat)
+        market_collector = build_market_collector(config, repository, notifier)
         LuminaService(config, market_collector, database).run()
     except (
         ConfigError,
         StartupError,
         MarketBootstrapError,
         MarketSourceCreationError,
+        NotifierCreationError,
     ) as exc:
         print(f"Lumina 启动失败：{exc}", file=sys.stderr)
         return 2
