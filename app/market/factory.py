@@ -9,6 +9,7 @@ from decimal import Decimal
 from app.core.config import MarketSettings
 from app.market.mock import MockMarketSource
 from app.market.source import MarketSource
+from app.market.tencent import TencentMarketSource
 
 
 class MarketSourceCreationError(RuntimeError):
@@ -31,6 +32,10 @@ def create_market_source(
             clock=mock_clock,
             seed=settings.mock.seed,
         )
-    if settings.source in {"sina", "tencent"}:
+    if settings.source == "tencent":
+        if settings.tencent is None:
+            raise MarketSourceCreationError("行情源 tencent 缺少有效配置")
+        return TencentMarketSource(settings.tencent)
+    if settings.source == "sina":
         raise MarketSourceCreationError(f"行情源 {settings.source} 尚未实现")
     raise MarketSourceCreationError(f"未知行情源：{settings.source}")

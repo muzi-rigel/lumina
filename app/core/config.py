@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.errors import ConfigError as ConfigError
+from app.core.market_config import MarketSettings as MarketSettings
+from app.core.market_config import MockSettings as MockSettings
+from app.core.market_config import parse_market
 from app.core.notify_config import NotifySettings, parse_notify
 from app.core.rule_config import load_rule_definitions
 from app.core.yaml_loader import as_mapping as _as_mapping
@@ -30,22 +32,6 @@ class RuntimeSettings:
     """服务运行参数。"""
 
     log_level: str
-
-
-@dataclass(frozen=True)
-class MockSettings:
-    """Mock 行情源的简单可重复参数。"""
-
-    seed: int | None
-
-
-@dataclass(frozen=True)
-class MarketSettings:
-    """行情采集来源和周期配置。"""
-
-    source: str
-    interval_seconds: float
-    mock: MockSettings
 
 
 @dataclass(frozen=True)
@@ -100,16 +86,6 @@ def _required_bool(values: Mapping[str, object], key: str, field: str) -> bool:
     return value
 
 
-def _positive_number(values: Mapping[str, object], key: str, field: str) -> float:
-    value = values.get(key)
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise ConfigError(f"配置项 {field} 必须是数字")
-    result = float(value)
-    if not math.isfinite(result) or result <= 0:
-        raise ConfigError(f"配置项 {field} 必须是大于 0 的有限数值")
-    return result
-
-
 def _parse_app(root: Mapping[str, object]) -> AppSettings:
     values = _required_mapping(root, "app")
     name = _required_string(values, "name", "app.name")
@@ -135,28 +111,6 @@ def _parse_runtime(root: Mapping[str, object]) -> RuntimeSettings:
     if log_level not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
         raise ConfigError("配置项 runtime.log_level 非法")
     return RuntimeSettings(log_level=log_level)
-
-
-def _parse_market(root: Mapping[str, object]) -> MarketSettings:
-    values = _required_mapping(root, "market")
-    source = _required_string(values, "source", "market.source").lower()
-    if source not in {"mock", "sina", "tencent"}:
-        raise ConfigError(f"不支持的行情源：{source}")
-
-    mock_values = _as_mapping(values.get("mock", {}), "market.mock")
-    seed = mock_values.get("seed")
-    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
-        raise ConfigError("配置项 market.mock.seed 必须是整数或 null")
-
-    return MarketSettings(
-        source=source,
-        interval_seconds=_positive_number(
-            values,
-            "interval_seconds",
-            "market.interval_seconds",
-        ),
-        mock=MockSettings(seed=seed),
-    )
 
 
 def _parse_storage(root: Mapping[str, object]) -> StorageSettings:
@@ -227,7 +181,7 @@ def load_config(
     return AppConfig(
         app=_parse_app(settings_root),
         runtime=_parse_runtime(settings_root),
-        market=_parse_market(settings_root),
+        market=parse_market(settings_root),
         storage=_parse_storage(settings_root),
         notify=parse_notify(settings_root),
         stocks=stocks,

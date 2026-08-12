@@ -12,7 +12,7 @@ from app.notify.wechat import WeChatNotifier
 def _root(**overrides: object) -> Mapping[str, object]:
     values: dict[str, object] = {
         "enabled": False,
-        "webhook_env": "LUMINA_WECHAT_WEBHOOK_URL",
+        "webhook_env": "LUMINA_WECHAT_URL",
         "timeout_seconds": 5,
         "max_attempts": 3,
         "retry_backoff_seconds": 1,
@@ -25,7 +25,7 @@ def _root(**overrides: object) -> Mapping[str, object]:
 def test_notify_config_loads_bounded_retry_settings() -> None:
     settings = parse_notify(_root()).wechat
 
-    assert settings.webhook_env == "LUMINA_WECHAT_WEBHOOK_URL"
+    assert settings.webhook_env == "LUMINA_WECHAT_URL"
     assert settings.timeout_seconds == 5
     assert settings.max_attempts == 3
     assert settings.retry_backoff_seconds == 1
@@ -84,7 +84,7 @@ def test_enabled_notifier_requires_https_webhook(url: str) -> None:
 def test_enabled_notifier_resolves_webhook_only_from_environment() -> None:
     settings = WeChatSettings(
         enabled=True,
-        webhook_env="LUMINA_WECHAT_WEBHOOK_URL",
+        webhook_env="LUMINA_WECHAT_URL",
         timeout_seconds=5,
         max_attempts=3,
         retry_backoff_seconds=1,

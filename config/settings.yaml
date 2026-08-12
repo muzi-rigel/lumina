@@ -11,6 +11,13 @@ market:
   interval_seconds: 5
   mock:
     seed: 42
+  tencent:
+    url: https://qt.gtimg.cn/q=
+    timeout_seconds: 3
+    batch_size: 50
+    max_attempts: 2
+    retry_backoff_seconds: 0.5
+    max_total_seconds: 8
 
 storage:
   type: sqlite
@@ -19,7 +26,7 @@ storage:
 notify:
   wechat:
     enabled: false
-    webhook_env: LUMINA_WECHAT_WEBHOOK_URL
+    webhook_env: LUMINA_WECHAT_URL
     timeout_seconds: 5
     max_attempts: 3
     retry_backoff_seconds: 1

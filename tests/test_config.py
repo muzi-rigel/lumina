@@ -22,7 +22,7 @@ storage:
 notify:
   wechat:
     enabled: false
-    webhook_env: LUMINA_WECHAT_WEBHOOK_URL
+    webhook_env: LUMINA_WECHAT_URL
     timeout_seconds: 5
     max_attempts: 3
     retry_backoff_seconds: 1
@@ -63,11 +63,52 @@ def test_load_config_reads_and_merges_three_files(tmp_path: Path) -> None:
     assert config.market.source == "mock"
     assert config.market.interval_seconds == 5
     assert config.market.mock.seed == 42
+    assert config.market.tencent is None
     assert config.storage.type == "sqlite"
     assert config.storage.path == Path("data/lumina.db")
     assert config.notify.wechat.enabled is False
     assert [stock.code for stock in config.stocks] == ["510300", "000001"]
     assert config.rules == ()
+
+
+def test_load_config_reads_complete_tencent_market_config(tmp_path: Path) -> None:
+    settings_path, stocks_path, rules_path = _write_configs(tmp_path)
+    settings_path.write_text(
+        VALID_SETTINGS.replace(
+            """  source: mock
+  interval_seconds: 5
+  mock:
+    seed: 42""",
+            """  source: tencent
+  interval_seconds: 5
+  tencent:
+    url: https://qt.gtimg.cn/q=
+    timeout_seconds: 3
+    batch_size: 50
+    max_attempts: 2
+    retry_backoff_seconds: 0.5
+    max_total_seconds: 8""",
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(settings_path, stocks_path, rules_path)
+
+    assert config.market.source == "tencent"
+    assert config.market.tencent is not None
+    assert config.market.tencent.url == "https://qt.gtimg.cn/q="
+    assert config.market.tencent.batch_size == 50
+
+
+def test_production_config_keeps_mock_as_default_source() -> None:
+    config = load_config(
+        Path("config/settings.production.yaml"),
+        Path("config/stocks.yaml"),
+        Path("config/rules.yaml"),
+    )
+
+    assert config.market.source == "mock"
+    assert config.market.tencent is None
 
 
 @pytest.mark.parametrize("value", ["0", ".nan", ".inf"])

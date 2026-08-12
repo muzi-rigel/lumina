@@ -40,11 +40,22 @@ market:
   interval_seconds: 5
   mock:
     seed: 42
+  tencent:
+    url: https://qt.gtimg.cn/q=
+    timeout_seconds: 3
+    batch_size: 50
+    max_attempts: 2
+    retry_backoff_seconds: 0.5
+    max_total_seconds: 8
 ```
 
-当前只有 `mock` 可运行。配置为 `sina` 或 `tencent` 时，服务会在启动阶段明确
-报错，不会回退到 Mock。每个周期对所有启用标的执行一次批量查询，单标的失败或
-系统级行情源故障不会导致长期服务退出。
+当前 `mock` 和 `tencent` 可运行，`sina` 仍会在启动阶段明确报错。腾讯源使用 HTTPS
+批量获取沪深指数、ETF 和个股，网络请求具有超时、有限重试和总耗时预算，不会回退
+到 Mock。生产配置仍默认使用 `mock`，完成长期稳定验证后再手动切换为 `tencent`。
+单标的映射或解析失败不会影响同批正常行情，系统级故障也不会导致长期服务退出。
+
+腾讯源当前保留供应方返回的成交量和成交额原始值，不进行未经验证的单位转换。
+真实行情响应使用供应方时间，不能用本机请求时间代替。
 
 告警规则位于 `config/rules.yaml`。阈值统一使用正数幅度，由 `direction` 表达上涨或
 下跌；窗口历史与告警状态仅保存在内存，服务重启后会丢失。规则匹配时生成
@@ -56,7 +67,7 @@ market:
 告警日志，避免数据库临时故障造成实时告警遗漏。
 
 企业微信机器人默认关闭。启用时将 `notify.wechat.enabled` 改为 `true`，并通过
-`LUMINA_WECHAT_WEBHOOK_URL` 环境变量提供 webhook。密钥不会写入 YAML 或日志。
+`LUMINA_WECHAT_URL` 环境变量提供 webhook。密钥不会写入 YAML 或日志。
 通知采用同步有限重试，并由 `max_total_seconds` 限制单条通知占用调度线程的总时间；
 通知失败不会影响后续告警。
 
@@ -90,7 +101,7 @@ sudo systemctl enable --now lumina.service
 如需启用企业微信，在 `/etc/lumina/lumina.env` 中设置：
 
 ```bash
-LUMINA_WECHAT_WEBHOOK_URL=https://example.invalid/cgi-bin/webhook/send?key=REPLACE_ME
+LUMINA_WECHAT_URL=https://example.invalid/cgi-bin/webhook/send?key=REPLACE_ME
 ```
 
 该文件应保持仅 root 可读。示例 URL 不能直接使用，必须替换为实际机器人 webhook。
@@ -110,6 +121,9 @@ Lumina 会结束调度循环并退出。
 - `app/core`：配置、日志和周期调度。
 - `app/market`：标准化行情模型、批量数据源协议、Mock 源及供应方实现。
 - `app/market/factory.py`：根据配置创建行情源，拒绝未知或尚未实现的数据源。
+- `app/market/symbols.py`：结合代码和标的类型映射腾讯沪深证券标识。
+- `app/market/tencent_parser.py`：严格解析腾讯文本并转换为统一 Decimal 行情。
+- `app/core/retry.py`：与 HTTP、行情和通知业务无关的同步重试预算。
 - `app/market/collector.py`：批量采集、结构化日志和逐行情监控处理入口。
 - `app/monitor`：内存行情历史、涨跌幅规则、边沿触发状态和告警事件模型。
 - `app/notify/formatter.py`：将 `AlertEvent` 转换为通用 `MessagePayload`。
@@ -120,5 +134,6 @@ Lumina 会结束调度循环并退出。
 - `app/storage/repository.py`：隔离行情快照与告警事件的 SQL 写入。
 - `app/main.py`：依赖装配及服务生命周期。
 
-当前 Mock 行情源完全在本地生成可重复数据；新浪和腾讯模块仍为明确的扩展边界，不会
-发起外部请求。只有显式启用企业微信并提供 webhook 后，通知模块才会访问网络。
+Mock 行情源完全在本地生成可重复数据；只有将 `market.source` 显式设置为 `tencent`
+后才会请求真实行情。新浪仍是未实现的扩展边界。只有显式启用企业微信并提供 webhook
+后，通知模块才会访问企业微信网络接口。

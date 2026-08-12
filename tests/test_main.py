@@ -41,7 +41,7 @@ storage:
 notify:
   wechat:
     enabled: false
-    webhook_env: LUMINA_WECHAT_WEBHOOK_URL
+    webhook_env: LUMINA_WECHAT_URL
     timeout_seconds: 5
     max_attempts: 3
     retry_backoff_seconds: 1
@@ -89,9 +89,7 @@ def test_graceful_exit_is_idempotent(tmp_path: Path) -> None:
     assert service._stopping is True
 
 
-@pytest.mark.parametrize("source_name", ["sina", "tencent"])
-def test_main_rejects_unimplemented_market_source(
-    source_name: str,
+def test_main_rejects_unimplemented_sina_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -100,7 +98,7 @@ def test_main_rejects_unimplemented_market_source(
     stocks_path = tmp_path / "stocks.yaml"
     settings_text = Path("config/settings.yaml").read_text(encoding="utf-8")
     settings_path.write_text(
-        settings_text.replace("source: mock", f"source: {source_name}"),
+        settings_text.replace("source: mock", "source: sina"),
         encoding="utf-8",
     )
     stocks_path.write_text(
@@ -126,4 +124,4 @@ def test_main_rejects_unimplemented_market_source(
     )
 
     assert exit_code == 2
-    assert f"行情源 {source_name} 尚未实现" in capsys.readouterr().err
+    assert "行情源 sina 尚未实现" in capsys.readouterr().err
