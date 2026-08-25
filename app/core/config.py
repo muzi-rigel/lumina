@@ -35,12 +35,30 @@ class RuntimeSettings:
 
 
 @dataclass(frozen=True)
+class RetentionSettings:
+    """SQLite 行情保留策略。"""
+
+    quote_days: int = 30
+    delete_batch_size: int = 5_000
+
+
+@dataclass(frozen=True)
+class BackupSettings:
+    """SQLite 在线备份策略。"""
+
+    directory: Path = Path("data/backups")
+    keep_count: int = 14
+
+
+@dataclass(frozen=True)
 class StorageSettings:
     """持久化配置。"""
 
     type: str
     path: Path
     busy_timeout_seconds: float = 10.0
+    retention: RetentionSettings = RetentionSettings()
+    backup: BackupSettings = BackupSettings()
 
 
 @dataclass(frozen=True)
@@ -118,10 +136,43 @@ def _parse_storage(root: Mapping[str, object]) -> StorageSettings:
     storage_type = _required_string(values, "type", "storage.type").lower()
     if storage_type != "sqlite":
         raise ConfigError("当前仅支持 storage.type=sqlite")
+    retention_values = values.get("retention", {})
+    retention = _as_mapping(retention_values, "storage.retention")
+    quote_days = _positive_int(retention, "quote_days", "storage.retention.quote_days", 30)
+    batch_size = _positive_int(
+        retention,
+        "delete_batch_size",
+        "storage.retention.delete_batch_size",
+        5_000,
+    )
+
+    backup_values = values.get("backup", {})
+    backup = _as_mapping(backup_values, "storage.backup")
+    backup_directory = backup.get("directory", "data/backups")
+    if not isinstance(backup_directory, str) or not backup_directory.strip():
+        raise ConfigError("配置项 storage.backup.directory 必须是非空字符串")
+
     return StorageSettings(
         type=storage_type,
         path=Path(_required_string(values, "path", "storage.path")),
+        retention=RetentionSettings(quote_days=quote_days, delete_batch_size=batch_size),
+        backup=BackupSettings(
+            directory=Path(backup_directory.strip()),
+            keep_count=_positive_int(backup, "keep_count", "storage.backup.keep_count", 14),
+        ),
     )
+
+
+def _positive_int(
+    values: Mapping[str, object],
+    key: str,
+    field: str,
+    default: int,
+) -> int:
+    value = values.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ConfigError(f"配置项 {field} 必须是大于 0 的整数")
+    return value
 
 
 def _normalize_stock_code(value: object, index: int) -> str:

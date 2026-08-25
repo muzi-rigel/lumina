@@ -7,26 +7,24 @@ runtime:
   log_level: INFO
 
 market:
-  source: mock
+  source: tencent
   interval_seconds: 5
-  mock:
-    seed: 42
   tencent:
     url: https://qt.gtimg.cn/q=
     timeout_seconds: 3
-    batch_size: 50
+    batch_size: 3
     max_attempts: 2
     retry_backoff_seconds: 0.5
     max_total_seconds: 8
 
 storage:
   type: sqlite
-  path: data/lumina.db
+  path: /tmp/lumina-smoke/lumina.db
   retention:
     quote_days: 30
     delete_batch_size: 5000
   backup:
-    directory: data/backups
+    directory: /tmp/lumina-smoke/backups
     keep_count: 14
 
 notify:

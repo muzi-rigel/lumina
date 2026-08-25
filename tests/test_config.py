@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
 from app.core.config import ConfigError, load_config
 
@@ -58,6 +59,9 @@ def test_load_config_reads_and_merges_three_files(tmp_path: Path) -> None:
     config = load_config(settings_path, stocks_path, rules_path)
 
     assert config.app.name == "lumina"
+    assert config.storage.retention.quote_days == 30
+    assert config.storage.retention.delete_batch_size == 5_000
+    assert config.storage.backup.keep_count == 14
     assert config.app.timezone == "Asia/Shanghai"
     assert config.runtime.log_level == "INFO"
     assert config.market.source == "mock"
@@ -69,6 +73,26 @@ def test_load_config_reads_and_merges_three_files(tmp_path: Path) -> None:
     assert config.notify.wechat.enabled is False
     assert [stock.code for stock in config.stocks] == ["510300", "000001"]
     assert config.rules == ()
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "value"),
+    [
+        ("retention", "quote_days", 0),
+        ("retention", "delete_batch_size", -1),
+        ("backup", "keep_count", True),
+    ],
+)
+def test_load_config_rejects_invalid_maintenance_values(
+    tmp_path: Path, section: str, field: str, value: object
+) -> None:
+    settings_path, stocks_path, rules_path = _write_configs(tmp_path)
+    settings = yaml.safe_load(settings_path.read_text(encoding="utf-8"))
+    settings["storage"][section] = {field: value}
+    settings_path.write_text(yaml.safe_dump(settings), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match=f"storage.{section}.{field}"):
+        load_config(settings_path, stocks_path, rules_path)
 
 
 def test_load_config_reads_complete_tencent_market_config(tmp_path: Path) -> None:

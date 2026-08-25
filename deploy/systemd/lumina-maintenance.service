@@ -1,0 +1,18 @@
+[Unit]
+Description=Lumina SQLite Daily Maintenance
+After=lumina.service
+
+[Service]
+Type=oneshot
+User=lumina
+Group=lumina
+WorkingDirectory=/opt/lumina
+ExecStart=/opt/lumina/.venv/bin/lumina-maintenance --settings /etc/lumina/settings.yaml --stocks /etc/lumina/stocks.yaml --rules /etc/lumina/rules.yaml
+
+StateDirectory=lumina
+ReadWritePaths=/var/backups/lumina
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict

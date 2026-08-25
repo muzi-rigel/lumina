@@ -26,6 +26,10 @@ SCHEMA_STATEMENTS = (
     ON quote_snapshot (code, quote_time)
     """,
     """
+    CREATE INDEX IF NOT EXISTS idx_quote_snapshot_created_at
+    ON quote_snapshot (created_at)
+    """,
+    """
     CREATE TABLE IF NOT EXISTS alert_event (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         code TEXT NOT NULL,

@@ -23,6 +23,12 @@ market:
 storage:
   type: sqlite
   path: /var/lib/lumina/lumina.db
+  retention:
+    quote_days: 30
+    delete_batch_size: 5000
+  backup:
+    directory: /var/backups/lumina
+    keep_count: 14
 
 notify:
   wechat:

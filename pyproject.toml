@@ -22,6 +22,8 @@ dev = [
 
 [project.scripts]
 lumina = "app.main:main"
+lumina-check = "app.preflight:main"
+lumina-maintenance = "app.maintenance:main"
 
 [tool.setuptools.packages.find]
 include = ["app", "app.*"]

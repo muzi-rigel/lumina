@@ -1,0 +1,15 @@
+stocks:
+  - code: "000001"
+    name: 上证指数
+    type: INDEX
+    enabled: true
+
+  - code: "510300"
+    name: 沪深300ETF
+    type: ETF
+    enabled: true
+
+  - code: "600519"
+    name: 贵州茅台
+    type: STOCK
+    enabled: true

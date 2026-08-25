@@ -1,7 +1,8 @@
 # Lumina
 
-Lumina 是一个长期运行的 A 股智能监控与研究系统。当前已具备 Mock 批量行情采集、
-短期内存行情窗口，以及日内和指定窗口涨跌幅告警；尚未接入真实行情和消息发送。
+Lumina 是一个长期运行的 A 股智能监控与研究系统。当前已具备 Mock 与腾讯批量行情
+采集、内存行情窗口、涨跌幅告警、SQLite 持久化和企业微信通知。生产配置默认保持
+Mock，腾讯行情和企业微信都必须显式启用。
 
 ## 环境要求
 
@@ -31,6 +32,7 @@ python3.11 -m venv .venv
 
 启动时会检查三个配置文件、日志目录、数据目录和配置时区下的系统时间。
 日志同时输出到控制台和 `logs/lumina.log`。
+文件日志按 10 MiB 轮转并保留 10 份历史文件，不要再用外部 logrotate 操作同一文件。
 
 行情采集配置位于 `settings.yaml`：
 
@@ -82,39 +84,147 @@ market:
 
 ## Ubuntu 部署
 
-建议代码安装到 `/opt/lumina`，配置保存到
-`/etc/lumina/settings.yaml`、`/etc/lumina/stocks.yaml` 和
-`/etc/lumina/rules.yaml`。生产模板已将数据库设置为 `/var/lib/lumina/lumina.db`。
+代码安装到 `/opt/lumina`，配置保存在 `/etc/lumina`，数据库位于
+`/var/lib/lumina`，在线备份位于 `/var/backups/lumina`。首次部署先创建专用用户和目录：
 
 ```bash
 sudo useradd --system --home /opt/lumina --shell /usr/sbin/nologin lumina
-sudo install -d -o lumina -g lumina /opt/lumina /etc/lumina
-sudo cp config/settings.production.yaml /etc/lumina/settings.yaml
-sudo cp config/stocks.yaml /etc/lumina/stocks.yaml
-sudo cp config/rules.yaml /etc/lumina/rules.yaml
-sudo install -m 600 -o root -g root /dev/null /etc/lumina/lumina.env
-sudo cp deploy/systemd/lumina.service /etc/systemd/system/lumina.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now lumina.service
+sudo install -d -o lumina -g lumina /opt/lumina /var/lib/lumina /var/log/lumina
+sudo install -d -m 750 -o lumina -g lumina /var/backups/lumina
+sudo install -d -m 750 -o root -g lumina /etc/lumina
 ```
 
-如需启用企业微信，在 `/etc/lumina/lumina.env` 中设置：
+仅在配置文件尚不存在时，从仓库模板安装。升级时不要用模板覆盖 `/etc/lumina`：
 
 ```bash
-LUMINA_WECHAT_URL=https://example.invalid/cgi-bin/webhook/send?key=REPLACE_ME
+test -e /etc/lumina/settings.yaml || sudo install -m 640 -o root -g lumina config/settings.production.yaml /etc/lumina/settings.yaml
+test -e /etc/lumina/stocks.yaml || sudo install -m 640 -o root -g lumina config/stocks.yaml /etc/lumina/stocks.yaml
+test -e /etc/lumina/rules.yaml || sudo install -m 640 -o root -g lumina config/rules.yaml /etc/lumina/rules.yaml
+test -e /etc/lumina/lumina.env || sudo install -m 600 -o root -g root /dev/null /etc/lumina/lumina.env
 ```
 
-该文件应保持仅 root 可读。示例 URL 不能直接使用，必须替换为实际机器人 webhook。
+以上四条安装配置的命令只在首次部署执行。后续应使用 `sudoedit` 审核和修改现有文件。
+从旧版本升级时，必须把生产模板中的 `storage.retention` 和 `storage.backup` 节点人工
+合并到现有 settings；不要整文件覆盖。缺少 `/var/backups/lumina` 配置或写权限时，
+maintenance 会失败并保留全部行情，不会退化为无备份清理。
+创建虚拟环境并安装当前提交后，记录实际部署版本：
+
+```bash
+python3.11 -m venv /opt/lumina/.venv
+/opt/lumina/.venv/bin/pip install --upgrade pip
+/opt/lumina/.venv/bin/pip install /opt/lumina/dist/lumina-0.1.0-py3-none-any.whl
+LUMINA_RELEASE_SHA='REPLACE_WITH_FULL_40_CHARACTER_COMMIT_SHA'
+printf '%s\n' "$LUMINA_RELEASE_SHA" | sudo tee /opt/lumina/DEPLOYED_COMMIT >/dev/null
+sudo chown root:lumina /opt/lumina/DEPLOYED_COMMIT
+sudo chmod 640 /opt/lumina/DEPLOYED_COMMIT
+```
+
+`LUMINA_RELEASE_SHA` 必须由构建或发布端从本次 wheel 对应的 Git 提交取得并传入，
+服务器不依赖 `/opt/lumina` 是 Git 工作树。写入后应与发布记录中的完整 SHA 核对。
+保留本次 wheel 和上一版 wheel。回滚时重新安装上一版 wheel，并把
+`DEPLOYED_COMMIT` 更新为对应提交。不要删除或替换 `/var/lib/lumina/lumina.db`。
+
+安装或更新 systemd 单元：
+
+```bash
+sudo cp deploy/systemd/lumina.service /etc/systemd/system/lumina.service
+sudo cp deploy/systemd/lumina-maintenance.service /etc/systemd/system/lumina-maintenance.service
+sudo cp deploy/systemd/lumina-maintenance.timer /etc/systemd/system/lumina-maintenance.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now lumina.service
+sudo systemctl enable --now lumina-maintenance.timer
+```
+
+只有 systemd 单元发生变化时才需要 `daemon-reload`。主服务启动前只检查配置、日志和
+数据目录权限以及 SQLite 连接，不检查腾讯或企业微信网络。连续启动失败超过限制后，
+systemd 会停止快速重试，避免错误配置造成无限重启。
+
+如需启用企业微信，先轮换所有曾暴露的 webhook，再使用 `sudoedit
+/etc/lumina/lumina.env` 写入：
+
+```bash
+LUMINA_WECHAT_URL='REPLACE_WITH_ROTATED_WEBHOOK'
+```
+
+YAML 只能保存 `webhook_env: LUMINA_WECHAT_URL`，不得保存真实 URL。环境文件保持
+`0600 root:root`；验证时只能检查变量是否存在，不能打印变量内容。腾讯和数据库稳定
+后才启用通知。
 
 查看服务状态与日志：
 
 ```bash
 systemctl status lumina.service
 journalctl -u lumina.service -f
+journalctl -u lumina-maintenance.service
+systemctl list-timers lumina-maintenance.timer
+cat /opt/lumina/DEPLOYED_COMMIT
 ```
 
 systemd 会在进程异常退出后自动重启服务。正常停止时发送 `SIGTERM`，
 Lumina 会结束调度循环并退出。
+
+## SQLite 保留、备份与恢复
+
+每日 03:30 左右由 `lumina-maintenance.timer` 启动独立 oneshot 进程。维护任务不会加入
+行情调度线程，固定顺序为：
+
+```text
+SQLite backup API 在线备份 → quick_check → 清理行情 → checkpoint → 轮转备份
+```
+
+`quote_snapshot` 保留 30 天并以 5,000 条短事务分批清理；`alert_event` 暂不自动清理。
+备份保留最近 14 份。备份或一致性检查失败时，本轮不会删除任何行情。运行中的 WAL
+数据库禁止用文件复制命令直接备份，也不应每日执行 `VACUUM`。
+
+部署后先手动验证维护任务：
+
+```bash
+sudo systemctl start lumina-maintenance.service
+sudo systemctl status lumina-maintenance.service
+sudo -u lumina /opt/lumina/.venv/bin/python -c "import sqlite3; c=sqlite3.connect('/var/backups/lumina/REPLACE.db'); print(c.execute('PRAGMA quick_check').fetchone()); c.close()"
+```
+
+恢复演练必须写到全新路径，不覆盖生产数据库。可在 Python 中调用
+`app.storage.backup.restore_backup`，验证表、记录数量和 `PRAGMA quick_check` 后删除演练
+副本。建议每月执行一次恢复演练。大批量清理后 SQLite 会复用空闲页；只有确需归还
+磁盘空间时，才在停止主服务、确认空闲空间充足并完成备份后人工执行 `VACUUM`。
+
+## Tencent 真实行情 smoke
+
+仓库提供 `deploy/smoke` 下的独立配置。它只包含 `000001 INDEX`、`510300 ETF` 和
+`600519 STOCK`，通知关闭，数据库写入 `/tmp/lumina-smoke/lumina.db`，不会修改正式
+配置或正式数据库。先完成离线测试，再在服务器短时运行：
+
+```bash
+sudo -u lumina install -d /tmp/lumina-smoke/logs
+sudo -u lumina env LUMINA_LOG_DIR=/tmp/lumina-smoke/logs \
+  timeout --signal=TERM 20s /opt/lumina/.venv/bin/lumina \
+  --settings /opt/lumina/deploy/smoke/settings.tencent.yaml \
+  --stocks /opt/lumina/deploy/smoke/stocks.yaml \
+  --rules /opt/lumina/deploy/smoke/rules.yaml
+sudo -u lumina /opt/lumina/.venv/bin/python - <<'PY'
+import sqlite3
+
+connection = sqlite3.connect("/tmp/lumina-smoke/lumina.db")
+try:
+    rows = connection.execute(
+        "SELECT code, price, quote_time, created_at "
+        "FROM quote_snapshot ORDER BY code"
+    ).fetchall()
+    for row in rows:
+        print(row)
+finally:
+    connection.close()
+PY
+```
+
+检查三只标的的返回数量、价格、昨收、行情时间、成交量、成交额，以及 HTTP 重试和
+`MarketSourceError` 日志。腾讯源
+继续保留供应方 volume/turnover 原始语义。验证结束后可删除 `/tmp/lumina-smoke`，但
+不得删除正式数据库或正式日志。
+
+安全上线顺序：提交并发布 wheel，备份数据库，Mock 模式启动，执行独立 Tencent
+smoke，显式切换正式配置为 Tencent，观察日志与数据库，最后轮换并启用企业微信。
 
 ## 模块职责
 

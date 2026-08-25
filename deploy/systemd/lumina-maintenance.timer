@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Lumina SQLite maintenance daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=10m
+Persistent=true
+Unit=lumina-maintenance.service
+
+[Install]
+WantedBy=timers.target
